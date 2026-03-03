@@ -19,7 +19,7 @@ class Transaction(SQLModel, table=True):
         primary_key=True
     )
 
-    user_id: uuid.UUID = Field(foreign_key="user.id")
+    user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE")
 
     type: TransactionType = Field(
         nullable=False
