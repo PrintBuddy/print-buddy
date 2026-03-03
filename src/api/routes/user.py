@@ -212,6 +212,46 @@ def update_user(
 
 
 @router.patch(
+    "/balance-recharge/{user_id}/{amount}",
+    response_model=UserRead,
+    status_code=status.HTTP_200_OK
+)
+def recharge_user_balance(
+    user_id: str,
+    amount: float,
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    """Add a positive credit amount to a user's balance and record it as a RECHARGE transaction."""
+    if amount <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Recharge amount must be positive"
+        )
+    admin_id = token.credentials
+    user = user_service.get_user_by_id(user_id, session)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    user_service.add_credit(user_id, amount, session)
+    balance = user_service.get_user_balance(user_id, session)
+    admin = user_service.get_username_by_id(admin_id, session)
+
+    tx_data = TransactionCreate(
+        user_id=uuid.UUID(user_id),
+        type=TransactionType.RECHARGE,
+        amount=amount,
+        balance_after=balance,  # type: ignore
+        note=f"Recharge by admin {admin}"
+    )
+    tx_service.create_transaction(tx_data, session)
+    return user_service.get_user_by_id(user_id, session)
+
+
+@router.patch(
     "/balance-adjust/{user_id}/{amount}",
     response_model=UserRead,
     status_code=status.HTTP_200_OK
@@ -222,6 +262,7 @@ def adjust_user_balance(
     token: AdminTokenDep,
     session: SessionDep
 ):
+    """Set a user's balance to an absolute value and record it as an ADJUSTMENT transaction."""
     admin_id = token.credentials
     user = user_service.get_user_by_id(user_id, session)
     if user is None:
@@ -245,12 +286,12 @@ def adjust_user_balance(
         type=TransactionType.ADJUSTMENT,
         amount=diff,
         balance_after=balance,  # type: ignore
-        note=f"Recharge made by {admin}"
+        note=f"Balance adjustment by admin {admin}"
     )
 
     tx_service.create_transaction(tx_data, session)
 
-    return user
+    return user_service.get_user_by_id(user_id, session)
 
 
 @router.delete(
