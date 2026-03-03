@@ -1,3 +1,4 @@
+import uuid
 from sqlmodel import Session, select
 
 from ..models.user import User
@@ -41,19 +42,27 @@ class UserService:
     def email_exists(
         self,
         email: str,
-        session: Session 
+        session: Session,
+        exclude_id: str | None = None
     ) -> bool:
 
         statement = select(User).where(User.email == email)
+        if exclude_id is not None:
+            statement = statement.where(User.id != uuid.UUID(exclude_id))
         user = session.exec(statement).first()
         return user is not None
 
     def username_exists(
         self,
         username: str,
-        session: Session
+        session: Session,
+        exclude_id: str | None = None
     ):
-        return self.get_user_by_username(username, session) is not None
+        statement = select(User).where(User.username == username)
+        if exclude_id is not None:
+            statement = statement.where(User.id != uuid.UUID(exclude_id))
+        user = session.exec(statement).first()
+        return user is not None
 
     def get_user_by_username(
         self,
