@@ -1,5 +1,4 @@
 from fastapi import APIRouter, status, HTTPException
-import json
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
@@ -9,11 +8,13 @@ from ...db.models.transaction import TransactionType
 from ...schemas.transaction import TransactionRead, TransactionCreate
 
 from ...db.crud.user import UserService
+from ...db.crud.app_config import AppConfigService
 
 
 router = APIRouter()
 tx_service = TransactionService()
 user_service = UserService()
+config_service = AppConfigService()
 
 
 @router.get(
@@ -37,7 +38,23 @@ def get_my_transactions(
     status_code=status.HTTP_200_OK
 )
 def get_recharge_info(
-    token: TokenDep
+    token: TokenDep,
+    session: SessionDep
 ):
-    with open("./src/core/recharge_info.json") as f:
-        return json.load(f)
+    data = config_service.get("recharge_info", session)
+    if data is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recharge info not found")
+    return data
+
+
+@router.get(
+    "/all",
+    response_model=list[TransactionRead],
+    status_code=status.HTTP_200_OK
+)
+def get_all_transactions(
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    """Get all transactions across all users (admin only)."""
+    return tx_service.get_all_transactions(session)

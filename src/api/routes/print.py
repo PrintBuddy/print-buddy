@@ -1,10 +1,10 @@
 from fastapi import APIRouter, status, HTTPException
 
-from ..dependencies.token import TokenDep
+from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
 
 from ...schemas.print import PrintOptions
-from ...schemas.printjob import PrintJobCreate, PrintJobRead
+from ...schemas.printjob import PrintJobCreate, PrintJobRead, PrintJobAdminRead
 
 from ...db.crud.printjob import PrintJobService
 
@@ -103,3 +103,16 @@ def print_file(
     )
 
     return pj
+
+
+@router.get(
+    '/all-jobs',
+    response_model=list[PrintJobAdminRead],
+    status_code=status.HTTP_200_OK
+)
+def get_all_jobs(
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    """Get all print jobs across all users (admin only)."""
+    return pj_service.get_all_jobs(session)

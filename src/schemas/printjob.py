@@ -42,3 +42,7 @@ class PrintJobRead(BaseModel):
     status: JobStatus
     created_at: datetime
     completed_at: datetime | None = None
+
+
+class PrintJobAdminRead(PrintJobRead):
+    user_id: uuid.UUID

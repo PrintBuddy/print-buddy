@@ -5,10 +5,10 @@ import uuid
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
 
-from ...schemas.user import UserRead, UserUpdate, UserAdminRead, UserChangePassword
+from ...schemas.user import UserRead, UserUpdate, UserAdminRead, UserChangePassword, UserAdminUpdate
 from ...db.crud.user import UserService
 
-from ...schemas.transaction import TransactionCreate
+from ...schemas.transaction import TransactionCreate, TransactionRead
 from ...db.crud.transaction import TransactionService
 from ...db.models.transaction import TransactionType
 
@@ -64,7 +64,7 @@ def update_me(
         user_data.username = None
 
     if user_data.email is not None:
-        email_exists = user_service.email_exists(user_data.email, session)
+        email_exists = user_service.email_exists(user_data.email, session, exclude_id=user_id)
 
         if email_exists:
             raise HTTPException(
@@ -73,7 +73,7 @@ def update_me(
             )
         
     if user_data.username is not None:
-        username_exists = user_service.username_exists(user_data.username, session)
+        username_exists = user_service.username_exists(user_data.username, session, exclude_id=user_id)
 
         if username_exists:
             raise HTTPException(
@@ -177,13 +177,13 @@ def get_user_by_id(
 )
 def update_user(
     id: str,
-    user_data: UserUpdate,
+    user_data: UserAdminUpdate,
     token: AdminTokenDep,
     session: SessionDep
 ):
     
     if user_data.email is not None:
-        email_exists = user_service.email_exists(user_data.email, session)
+        email_exists = user_service.email_exists(user_data.email, session, exclude_id=id)
 
         if email_exists:
             raise HTTPException(
@@ -192,7 +192,7 @@ def update_user(
             )
         
     if user_data.username is not None:
-        username_exists = user_service.username_exists(user_data.username, session)
+        username_exists = user_service.username_exists(user_data.username, session, exclude_id=id)
 
         if username_exists:
             raise HTTPException(
@@ -275,3 +275,23 @@ def delete_user(
     fm.delete_directory(path)
     
     return user_delete
+
+
+@router.get(
+    '/{id}/transactions',
+    response_model=list[TransactionRead],
+    status_code=status.HTTP_200_OK
+)
+def get_user_transactions(
+    id: str,
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    """Get all transactions for a specific user (admin only)."""
+    user = user_service.get_user_by_id(id, session)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    return tx_service.get_transactions_from_user(id, session)

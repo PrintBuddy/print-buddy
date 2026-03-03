@@ -1,6 +1,5 @@
 from fastapi import APIRouter, status, HTTPException
 from ..dependencies.database import SessionDep
-import json
 
 from ...schemas.telegram import GenerateVoucher, TelegramID, UserBalance
 from ...schemas.voucher import VoucherRead
@@ -22,10 +21,16 @@ tx_service = TransactionService()
 ta_service = TelegramAdminService()
 
 
-TELEGRAM_ADMINS_FILE = "./src/core/telegram_admins.json"
-with open(TELEGRAM_ADMINS_FILE) as f:
-    TELEGRAM_TO_ADMIN = json.load(f)
-    
+def _require_telegram_admin(chat_id: str, session) -> str:
+    """Return the PrintBuddy user_id (str) for an authorised Telegram chat_id, or raise 403."""
+    ta = ta_service.get_telegram_admin(str(chat_id), session)
+    if ta is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Telegram ID not allowed"
+        )
+    return str(ta.user_id)
+
 
 @router.get(
     "/users",
@@ -36,20 +41,9 @@ def get_users(
     telegram_id: TelegramID,
     session: SessionDep
 ):
-    """
-    Return the list of all users for an authorized Telegram admin.
-    """
-    chat_id = telegram_id.chat_id
-    admin_id = TELEGRAM_TO_ADMIN.get(str(chat_id))
-
-    if not admin_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Telegram ID not allowed"
-        )
-
-    users = user_service.get_users(session)
-    return users
+    """Return the list of all users for an authorised Telegram admin."""
+    _require_telegram_admin(telegram_id.chat_id, session)
+    return user_service.get_users(session)
 
 
 @router.get(
@@ -62,25 +56,10 @@ def get_user(
     telegram_id: TelegramID,
     session: SessionDep
 ):
-    """
-    Return the list of all users for an authorized Telegram admin.
-    """
-    chat_id = telegram_id.chat_id
-    admin_id = TELEGRAM_TO_ADMIN.get(str(chat_id))
-
-    if not admin_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Telegram ID not allowed"
-        )
-
+    _require_telegram_admin(telegram_id.chat_id, session)
     user = user_service.get_user_by_username(username, session)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
 
 
@@ -93,22 +72,10 @@ def get_me(
     telegram_id: TelegramID,
     session: SessionDep
 ):
-    chat_id = telegram_id.chat_id
-    admin_id = TELEGRAM_TO_ADMIN.get(str(chat_id))
-
-    if not admin_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Telegram ID not allowed"
-        )
-    
+    admin_id = _require_telegram_admin(telegram_id.chat_id, session)
     user = user_service.get_user_by_id(admin_id, session)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
 
 
@@ -121,21 +88,8 @@ def generate_voucher(
     voucher_data: GenerateVoucher,
     session: SessionDep
 ):
-    
-    admin_chat_id = voucher_data.chat_id
-    amount = voucher_data.amount
-
-    admin_id = TELEGRAM_TO_ADMIN.get(str(admin_chat_id))
-    if not admin_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Telegram ID not allowed"
-        )
-    
-    voucher = voucher_assistant.generate_voucher(
-        admin_id, amount, session
-    )
-
+    admin_id = _require_telegram_admin(voucher_data.chat_id, session)
+    voucher = voucher_assistant.generate_voucher(admin_id, voucher_data.amount, session)
     return voucher
 
 
@@ -146,25 +100,13 @@ def generate_voucher(
 )
 def adjust_balance(
     adjust_data: UserBalance,
-    session: SessionDep 
+    session: SessionDep
 ):
-    chat_id = adjust_data.chat_id
-    admin_id = TELEGRAM_TO_ADMIN.get(str(chat_id))
-    username = adjust_data.username
+    admin_id = _require_telegram_admin(adjust_data.chat_id, session)
 
-    if not admin_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Telegram ID not allowed"
-        )
-    
-    user = user_service.get_user_by_username(username, session)
-
+    user = user_service.get_user_by_username(adjust_data.username, session)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
     user_id = str(user.id)
     amount = adjust_data.amount
@@ -200,24 +142,11 @@ def recharge_user(
     recharge_info: UserBalance,
     session: SessionDep
 ):
-    
-    chat_id = recharge_info.chat_id
-    admin_id = TELEGRAM_TO_ADMIN.get(str(chat_id))
-    username = recharge_info.username
+    admin_id = _require_telegram_admin(recharge_info.chat_id, session)
 
-    if not admin_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Telegram ID not allowed"
-        )
-    
-    user = user_service.get_user_by_username(username, session)
-
+    user = user_service.get_user_by_username(recharge_info.username, session)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
     user_id = str(user.id)
     amount = recharge_info.amount

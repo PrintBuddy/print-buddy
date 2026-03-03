@@ -28,7 +28,14 @@ class TransactionService:
         user_id: str,
         session: Session
     ):
-        stmt = select(Transaction).where(Transaction.user_id == user_id)
-        transactions = session.exec(stmt).all()
+        stmt = select(Transaction).where(
+            Transaction.user_id == user_id
+        ).order_by(Transaction.created_at.desc())  # type: ignore
+        return list(session.exec(stmt).all())
 
-        return transactions
+    def get_all_transactions(
+        self,
+        session: Session
+    ):
+        stmt = select(Transaction).order_by(Transaction.created_at.desc())  # type: ignore
+        return list(session.exec(stmt).all())

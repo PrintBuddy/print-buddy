@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr
+from datetime import datetime
 import uuid
 
 
@@ -22,10 +23,14 @@ class UserRead(BaseModel):
     surname: str
     balance: float
     credit_limit: float
+    is_admin: bool
 
 
 class UserAdminRead(UserRead):
     id: uuid.UUID
+    is_admin: bool
+    is_active: bool
+    created_at: datetime
 
 
 class UserUpdate(BaseModel):
@@ -33,6 +38,13 @@ class UserUpdate(BaseModel):
     username: str | None = None
     name: str | None = None
     surname: str | None = None
+
+
+class UserAdminUpdate(UserUpdate):
+    balance: float | None = None
+    credit_limit: float | None = None
+    is_active: bool | None = None
+    is_admin: bool | None = None
 
 
 class UserChangePassword(BaseModel):

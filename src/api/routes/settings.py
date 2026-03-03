@@ -1,0 +1,192 @@
+from fastapi import APIRouter, status, HTTPException
+from sqlmodel import select
+
+from ..dependencies.token import AdminTokenDep
+from ..dependencies.database import SessionDep
+
+from ...db.crud.app_config import AppConfigService
+from ...db.crud.telegram_admin import TelegramAdminService
+from ...db.crud.user import UserService
+from ...db.models.transaction import Transaction, TransactionType
+from ...db.models.refund_request import RefundRequest, RefundStatus
+from ...db.models.user import User
+from ...schemas.settings import RechargeInfoSchema, TelegramAdminRead, TelegramAdminCreate, ActivityLogEntry
+
+
+router = APIRouter()
+config_service = AppConfigService()
+ta_service = TelegramAdminService()
+user_service = UserService()
+
+RECHARGE_KEY = "recharge_info"
+
+
+# ─── Recharge Info ─────────────────────────────────────────────────────────────
+
+@router.get(
+    "/recharge-info",
+    response_model=RechargeInfoSchema,
+    status_code=status.HTTP_200_OK
+)
+def get_recharge_info(
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    data = config_service.get(RECHARGE_KEY, session)
+    if data is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recharge info not found")
+    return data
+
+
+@router.put(
+    "/recharge-info",
+    response_model=RechargeInfoSchema,
+    status_code=status.HTTP_200_OK
+)
+def update_recharge_info(
+    body: RechargeInfoSchema,
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    row = config_service.set(RECHARGE_KEY, body.model_dump(), session)
+    import json
+    return json.loads(row.value)
+
+
+# ─── Telegram Admins ───────────────────────────────────────────────────────────
+
+@router.get(
+    "/telegram-admins",
+    response_model=list[TelegramAdminRead],
+    status_code=status.HTTP_200_OK
+)
+def list_telegram_admins(
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    admins = ta_service.get_all(session)
+    result = []
+    for ta in admins:
+        user = user_service.get_user_by_id(str(ta.user_id), session)
+        result.append(TelegramAdminRead(
+            id=str(ta.id),
+            telegram_id=ta.telegram_id,
+            user_id=str(ta.user_id),
+            username=user.username if user else None,
+            name=user.name if user else None,
+            surname=user.surname if user else None,
+        ))
+    return result
+
+
+@router.post(
+    "/telegram-admins",
+    response_model=TelegramAdminRead,
+    status_code=status.HTTP_201_CREATED
+)
+def add_telegram_admin(
+    body: TelegramAdminCreate,
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    user = user_service.get_user_by_username(body.username, session)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Check if this telegram_id is already registered
+    existing = ta_service.get_telegram_admin(body.telegram_id, session)
+    if existing is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Telegram ID already registered")
+
+    ta = ta_service.create_telegram_admin(str(user.id), body.telegram_id, session)
+
+    return TelegramAdminRead(
+        id=str(ta.id),
+        telegram_id=ta.telegram_id,
+        user_id=str(ta.user_id),
+        username=user.username,
+        name=user.name,
+        surname=user.surname,
+    )
+
+
+@router.delete(
+    "/telegram-admins/{ta_id}",
+    status_code=status.HTTP_200_OK
+)
+def remove_telegram_admin(
+    ta_id: str,
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    ta = ta_service.delete_by_id(ta_id, session)
+    if ta is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Telegram admin not found")
+    return {"success": True}
+
+
+# ─── Activity Log ──────────────────────────────────────────────────────────────
+
+@router.get(
+    "/activity-log",
+    response_model=list[ActivityLogEntry],
+    status_code=status.HTTP_200_OK
+)
+def get_activity_log(
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    """Merged, chronological log of all admin-initiated recharges/adjustments and refund resolutions."""
+    entries: list[ActivityLogEntry] = []
+
+    # ── Admin-initiated transactions (RECHARGE + ADJUSTMENT) ──────────────────
+    admin_tx_types = (TransactionType.RECHARGE, TransactionType.ADJUSTMENT)
+    tx_stmt = (
+        select(Transaction, User)
+        .join(User, Transaction.user_id == User.id)
+        .where(Transaction.type.in_(admin_tx_types))  # type: ignore
+        .where(Transaction.note.isnot(None))           # type: ignore
+        .where(Transaction.note != "")                 # type: ignore
+        .order_by(Transaction.created_at.desc())       # type: ignore
+    )
+    for tx, target_user in session.exec(tx_stmt).all():
+        # Parse "Recharge made by admin" or "Adjusted by admin"
+        note = tx.note or ""
+        admin_username = note.split(" by ")[-1].strip() if " by " in note else None
+        entries.append(ActivityLogEntry(
+            id=str(tx.id),
+            action=tx.type.value,
+            admin_username=admin_username,
+            target_username=target_user.username,
+            amount=tx.amount,
+            balance_after=tx.balance_after,
+            note=note,
+            created_at=tx.created_at,
+        ))
+
+    # ── Resolved refunds ──────────────────────────────────────────────────────
+    ref_stmt = (
+        select(RefundRequest, User)
+        .join(User, RefundRequest.user_id == User.id)
+        .where(RefundRequest.status != RefundStatus.PENDING)
+        .order_by(RefundRequest.updated_at.desc())  # type: ignore
+    )
+    for refund, target_user in session.exec(ref_stmt).all():
+        action = (
+            "refund_approved" if refund.status == RefundStatus.APPROVED
+            else "refund_denied"
+        )
+        entries.append(ActivityLogEntry(
+            id=str(refund.id),
+            action=action,
+            admin_username=refund.resolved_by_username,
+            target_username=target_user.username,
+            amount=None,
+            balance_after=None,
+            note=refund.admin_message,
+            created_at=refund.updated_at,
+        ))
+
+    # Sort all entries newest-first
+    entries.sort(key=lambda e: e.created_at, reverse=True)
+    return entries

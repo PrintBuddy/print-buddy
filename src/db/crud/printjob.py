@@ -44,6 +44,21 @@ class PrintJobService:
 
         return jobs
 
+    def get_job_by_id(
+        self,
+        job_id: str,
+        session: Session
+    ) -> PrintJob | None:
+        stmt = select(PrintJob).where(PrintJob.id == job_id)
+        return session.exec(stmt).first()
+
+    def get_all_jobs(
+        self,
+        session: Session
+    ) -> list[PrintJob]:
+        stmt = select(PrintJob).order_by(PrintJob.created_at.desc())  # type: ignore
+        return list(session.exec(stmt).all())
+
     def get_transitory_status_jobs(
         self,
         session: Session
