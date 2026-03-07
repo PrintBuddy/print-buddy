@@ -36,3 +36,13 @@ class GlobalStats(BaseModel):
     by_printer: list[PrinterPageStats]
     by_user: list[UserPageStats]
     finance: FinanceStats
+
+
+class UserPersonalStats(BaseModel):
+    total_pages: int
+    bw_pages: int
+    color_pages: int
+    total_sheets: int
+    total_jobs: int
+    total_spent: float
+    by_printer: list[PrinterPageStats]
