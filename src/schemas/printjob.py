@@ -19,6 +19,7 @@ class PrintJobCreate(BaseModel):
 
     @property
     def dump_on_DB(self) -> dict:
+        from .print import SidesOption
         return {
             "user_id": uuid.UUID(self.user_id),
             "printer_id": self.printer.id,
@@ -27,6 +28,7 @@ class PrintJobCreate(BaseModel):
             "file_name": self.file.filename,
             "file_size": self.file.size_bytes,
             "pages": self.pages,
+            "two_sided": self.print_options.sides != SidesOption.ONE_SIDED,
             "color": self.print_options.color,
             "cost": self.cost
         }
@@ -37,6 +39,7 @@ class PrintJobRead(BaseModel):
     printer_name: str
     file_name: str
     pages: int
+    two_sided: bool
     color: bool
     cost: float
     status: JobStatus

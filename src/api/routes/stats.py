@@ -1,4 +1,5 @@
 from fastapi import APIRouter, status
+from math import ceil
 from sqlmodel import select
 
 from ..dependencies.token import AdminTokenDep
@@ -37,13 +38,19 @@ def get_stats_overview(
     color_pages = sum(j.pages for j in jobs if j.color)
     total_jobs = len(jobs)
 
+    def job_sheets(job: PrintJob) -> int:
+        return ceil(job.pages / 2) if job.two_sided else job.pages
+
+    total_sheets = sum(job_sheets(j) for j in jobs)
+
     # ── By printer ────────────────────────────────────────────────────────────
     printer_stats: dict[str, dict] = {}
     for job in jobs:
         name = job.printer_name
         if name not in printer_stats:
-            printer_stats[name] = {"total_pages": 0, "bw_pages": 0, "color_pages": 0, "total_cost": 0.0}
+            printer_stats[name] = {"total_pages": 0, "bw_pages": 0, "color_pages": 0, "total_sheets": 0, "total_cost": 0.0}
         printer_stats[name]["total_pages"] += job.pages
+        printer_stats[name]["total_sheets"] += job_sheets(job)
         printer_stats[name]["total_cost"] += job.cost
         if job.color:
             printer_stats[name]["color_pages"] += job.pages
@@ -74,8 +81,10 @@ def get_stats_overview(
                 "total_pages": 0,
                 "bw_pages": 0,
                 "color_pages": 0,
+                "total_sheets": 0,
             }
         user_stats[uid]["total_pages"] += job.pages
+        user_stats[uid]["total_sheets"] += job_sheets(job)
         if job.color:
             user_stats[uid]["color_pages"] += job.pages
         else:
@@ -125,6 +134,7 @@ def get_stats_overview(
         total_pages=total_pages,
         bw_pages=bw_pages,
         color_pages=color_pages,
+        total_sheets=total_sheets,
         total_jobs=total_jobs,
         by_printer=by_printer,
         by_user=by_user,
