@@ -85,6 +85,88 @@ class CUPSManager:
             print(e)
             return ""
         
+    def get_toner_levels(self, printer_name: str) -> list[dict] | None:
+        """
+        Returns toner/ink marker levels for the given CUPS printer.
+        Returns None if CUPS is unavailable or the printer is not found.
+        Returns an empty list if the printer does not report marker info.
+        Each entry: {name, color, level, low_level, high_level}
+        level == -1 means the driver cannot report a value for that slot.
+        """
+        if self.conn is None:
+            return None
+
+        try:
+            attrs = self.conn.getPrinterAttributes(printer_name)
+        except cups.IPPError:
+            return None
+
+        try:
+            levels = attrs.get("marker-levels")
+            names = attrs.get("marker-names")
+            colors = attrs.get("marker-colors")
+            low = attrs.get("marker-low-levels")
+            high = attrs.get("marker-high-levels")
+
+            if levels is None or names is None:
+                return []
+
+            def to_list(v):
+                return v if isinstance(v, list) else [v]
+
+            def safe_int(v, default):
+                try:
+                    return int(v)
+                except (TypeError, ValueError):
+                    return default
+
+            levels = [safe_int(x, -1) for x in to_list(levels)]
+            names = [str(x) for x in to_list(names)]
+            colors = (
+                [str(x) if x is not None else None for x in to_list(colors)]
+                if colors is not None
+                else [None] * len(names)
+            )
+            low = (
+                [safe_int(x, 10) for x in to_list(low)]
+                if low is not None
+                else [10] * len(names)
+            )
+            high = (
+                [safe_int(x, 100) for x in to_list(high)]
+                if high is not None
+                else [100] * len(names)
+            )
+
+            n = len(names)
+            if n == 0:
+                return []
+
+            # Some drivers prepend internal/waste-toner slots that are not named;
+            # align from the end so the named markers match correctly.
+            if len(levels) > n:
+                levels = levels[-n:]
+            if len(low) > n:
+                low = low[-n:]
+            if len(high) > n:
+                high = high[-n:]
+            if len(colors) > n:
+                colors = colors[-n:]
+
+            return [
+                {
+                    "name": names[i],
+                    "color": colors[i] if i < len(colors) else None,
+                    "level": levels[i] if i < len(levels) else -1,
+                    "low_level": low[i] if i < len(low) else 10,
+                    "high_level": high[i] if i < len(high) else 100,
+                }
+                for i in range(n)
+            ]
+        except Exception:
+            logger.error(f"Unexpected error parsing toner levels for {printer_name}")
+            return []
+
     def get_job_status(self, cups_id: int) -> JobStatus | None:
         if self.conn is None:
             return None

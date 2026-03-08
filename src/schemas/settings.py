@@ -38,6 +38,11 @@ class TelegramAdminCreate(BaseModel):
     telegram_id: str
 
 
+class TonerAlertConfig(BaseModel):
+    enabled: bool = False
+    interval_hours: int = 24  # hours between repeat notifications while toner is still low
+
+
 class ActivityLogEntry(BaseModel):
     id: str
     action: str  # "recharge" | "adjustment" | "refund_approved" | "refund_denied"

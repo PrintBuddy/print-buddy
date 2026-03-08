@@ -37,3 +37,11 @@ class PrinterAdminUpdate(BaseModel):
     price_per_page_bw: float | None = None
     admits_color: bool | None = None
     price_per_page_color: float | None = None
+
+
+class TonerMarker(BaseModel):
+    name: str
+    color: str | None = None
+    level: int               # -1 means the driver cannot report a value
+    low_level: int
+    high_level: int
