@@ -6,6 +6,7 @@ class PrinterPageStats(BaseModel):
     total_pages: int
     bw_pages: int
     color_pages: int
+    total_sheets: int
     total_cost: float
 
 
@@ -15,6 +16,7 @@ class UserPageStats(BaseModel):
     total_pages: int
     bw_pages: int
     color_pages: int
+    total_sheets: int
 
 
 class FinanceStats(BaseModel):
@@ -29,7 +31,18 @@ class GlobalStats(BaseModel):
     total_pages: int
     bw_pages: int
     color_pages: int
+    total_sheets: int
     total_jobs: int
     by_printer: list[PrinterPageStats]
     by_user: list[UserPageStats]
     finance: FinanceStats
+
+
+class UserPersonalStats(BaseModel):
+    total_pages: int
+    bw_pages: int
+    color_pages: int
+    total_sheets: int
+    total_jobs: int
+    total_spent: float
+    by_printer: list[PrinterPageStats]

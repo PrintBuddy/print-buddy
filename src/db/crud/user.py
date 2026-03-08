@@ -110,6 +110,10 @@ class UserService:
 
         return users
     
+    def get_admin_emails(self, session: Session) -> list[str]:
+        stmt = select(User.email).where(User.is_admin == True, User.is_active == True)
+        return list(session.exec(stmt).all())
+
     def get_user_balance(
         self,
         user_id: str,

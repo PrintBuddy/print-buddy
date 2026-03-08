@@ -10,7 +10,8 @@ from ...db.crud.user import UserService
 from ...db.models.transaction import Transaction, TransactionType
 from ...db.models.refund_request import RefundRequest, RefundStatus
 from ...db.models.user import User
-from ...schemas.settings import RechargeInfoSchema, TelegramAdminRead, TelegramAdminCreate, ActivityLogEntry
+from ...schemas.settings import RechargeInfoSchema, TelegramAdminRead, TelegramAdminCreate, ActivityLogEntry, TonerAlertConfig
+from ...core.mail_assistant import send_toner_alert_email
 
 
 router = APIRouter()
@@ -19,6 +20,8 @@ ta_service = TelegramAdminService()
 user_service = UserService()
 
 RECHARGE_KEY = "recharge_info"
+TONER_ALERT_KEY = "toner_alert_config"
+TONER_ALERT_DEFAULT = {"enabled": False, "interval_hours": 24}
 
 
 # ─── Recharge Info ─────────────────────────────────────────────────────────────
@@ -51,6 +54,72 @@ def update_recharge_info(
     row = config_service.set(RECHARGE_KEY, body.model_dump(), session)
     import json
     return json.loads(row.value)
+
+
+# ─── Toner Alert Config ────────────────────────────────────────────────────────
+
+@router.get(
+    "/toner-alert",
+    response_model=TonerAlertConfig,
+    status_code=status.HTTP_200_OK
+)
+def get_toner_alert_config(
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    data = config_service.get(TONER_ALERT_KEY, session)
+    return TonerAlertConfig(**(data or TONER_ALERT_DEFAULT))
+
+
+@router.put(
+    "/toner-alert",
+    response_model=TonerAlertConfig,
+    status_code=status.HTTP_200_OK
+)
+def update_toner_alert_config(
+    body: TonerAlertConfig,
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    config_service.set(TONER_ALERT_KEY, body.model_dump(), session)
+    return body
+
+
+@router.post(
+    "/toner-alert/test",
+    status_code=status.HTTP_200_OK
+)
+async def test_toner_alert(
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    """Sends a test low-toner alert email to all admin accounts using fake data."""
+    admin_emails = user_service.get_admin_emails(session)
+    if not admin_emails:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active admin accounts found to send the test email to."
+        )
+
+    mock_alerts = [
+        {
+            "printer_name": "Stampanti-Colori",
+            "markers": [
+                {"name": "C",  "level": 8,  "low_level": 10},
+                {"name": "M",  "level": 7,  "low_level": 10},
+                {"name": "Y",  "level": 9,  "low_level": 10},
+            ],
+        },
+        {
+            "printer_name": "Archi-Printer",
+            "markers": [
+                {"name": "Black", "level": 6, "low_level": 10},
+            ],
+        },
+    ]
+
+    await send_toner_alert_email(admin_emails, mock_alerts)
+    return {"detail": f"Test alert sent to {len(admin_emails)} admin(s)."}
 
 
 # ─── Telegram Admins ───────────────────────────────────────────────────────────
@@ -143,7 +212,7 @@ def get_activity_log(
     admin_tx_types = (TransactionType.RECHARGE, TransactionType.ADJUSTMENT)
     tx_stmt = (
         select(Transaction, User)
-        .join(User, Transaction.user_id == User.id)
+        .join(User, Transaction.user_id == User.id)   # type: ignore
         .where(Transaction.type.in_(admin_tx_types))  # type: ignore
         .where(Transaction.note.isnot(None))           # type: ignore
         .where(Transaction.note != "")                 # type: ignore
@@ -167,7 +236,7 @@ def get_activity_log(
     # ── Resolved refunds ──────────────────────────────────────────────────────
     ref_stmt = (
         select(RefundRequest, User)
-        .join(User, RefundRequest.user_id == User.id)
+        .join(User, RefundRequest.user_id == User.id)  # type: ignore
         .where(RefundRequest.status != RefundStatus.PENDING)
         .order_by(RefundRequest.updated_at.desc())  # type: ignore
     )

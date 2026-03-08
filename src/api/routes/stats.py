@@ -1,7 +1,9 @@
 from fastapi import APIRouter, status
+from math import ceil
 from sqlmodel import select
+import uuid
 
-from ..dependencies.token import AdminTokenDep
+from ..dependencies.token import AdminTokenDep, TokenDep
 from ..dependencies.database import SessionDep
 
 from sqlmodel import func
@@ -10,10 +12,79 @@ from ...db.models.printerjob import PrintJob, JobStatus
 from ...db.models.transaction import Transaction, TransactionType
 from ...db.models.user import User
 
-from ...schemas.stats import GlobalStats, PrinterPageStats, UserPageStats, FinanceStats
+from ...schemas.stats import GlobalStats, PrinterPageStats, UserPageStats, FinanceStats, UserPersonalStats
 
 
 router = APIRouter()
+
+
+@router.get(
+    "/me",
+    response_model=UserPersonalStats,
+    status_code=status.HTTP_200_OK
+)
+def get_my_stats(
+    token: TokenDep,
+    session: SessionDep
+):
+    """Return personal printing statistics for the authenticated user."""
+    user_id = uuid.UUID(token.credentials)
+
+    jobs = list(session.exec(
+        select(PrintJob).where(
+            PrintJob.user_id == user_id,
+            PrintJob.status == JobStatus.COMPLETED
+        )
+    ).all())
+
+    def job_sheets(job: PrintJob) -> int:
+        return ceil(job.pages / 2) if job.two_sided else job.pages
+
+    total_pages = sum(j.pages for j in jobs)
+    bw_pages = sum(j.pages for j in jobs if not j.color)
+    color_pages = sum(j.pages for j in jobs if j.color)
+    total_sheets = sum(job_sheets(j) for j in jobs)
+    total_jobs = len(jobs)
+
+    total_refunded = sum(
+        t.amount for t in session.exec(
+            select(Transaction).where(
+                Transaction.user_id == user_id,
+                Transaction.type == TransactionType.REFUND,
+                Transaction.amount > 0,
+            )
+        ).all()
+    )
+    total_spent = round(max(sum(j.cost for j in jobs) - total_refunded, 0), 2)
+
+    printer_stats: dict[str, dict] = {}
+    for job in jobs:
+        name = job.printer_name
+        if name not in printer_stats:
+            printer_stats[name] = {"total_pages": 0, "bw_pages": 0, "color_pages": 0, "total_sheets": 0, "total_cost": 0.0}
+        printer_stats[name]["total_pages"] += job.pages
+        printer_stats[name]["total_sheets"] += job_sheets(job)
+        printer_stats[name]["total_cost"] += job.cost
+        if job.color:
+            printer_stats[name]["color_pages"] += job.pages
+        else:
+            printer_stats[name]["bw_pages"] += job.pages
+
+    by_printer = [
+        PrinterPageStats(printer_name=k, **{**v, "total_cost": round(v["total_cost"], 2)})
+        for k, v in printer_stats.items()
+    ]
+    by_printer.sort(key=lambda x: x.total_pages, reverse=True)
+
+    return UserPersonalStats(
+        total_pages=total_pages,
+        bw_pages=bw_pages,
+        color_pages=color_pages,
+        total_sheets=total_sheets,
+        total_jobs=total_jobs,
+        total_spent=total_spent,
+        by_printer=by_printer,
+    )
 
 
 @router.get(
@@ -37,13 +108,19 @@ def get_stats_overview(
     color_pages = sum(j.pages for j in jobs if j.color)
     total_jobs = len(jobs)
 
+    def job_sheets(job: PrintJob) -> int:
+        return ceil(job.pages / 2) if job.two_sided else job.pages
+
+    total_sheets = sum(job_sheets(j) for j in jobs)
+
     # ── By printer ────────────────────────────────────────────────────────────
     printer_stats: dict[str, dict] = {}
     for job in jobs:
         name = job.printer_name
         if name not in printer_stats:
-            printer_stats[name] = {"total_pages": 0, "bw_pages": 0, "color_pages": 0, "total_cost": 0.0}
+            printer_stats[name] = {"total_pages": 0, "bw_pages": 0, "color_pages": 0, "total_sheets": 0, "total_cost": 0.0}
         printer_stats[name]["total_pages"] += job.pages
+        printer_stats[name]["total_sheets"] += job_sheets(job)
         printer_stats[name]["total_cost"] += job.cost
         if job.color:
             printer_stats[name]["color_pages"] += job.pages
@@ -74,8 +151,10 @@ def get_stats_overview(
                 "total_pages": 0,
                 "bw_pages": 0,
                 "color_pages": 0,
+                "total_sheets": 0,
             }
         user_stats[uid]["total_pages"] += job.pages
+        user_stats[uid]["total_sheets"] += job_sheets(job)
         if job.color:
             user_stats[uid]["color_pages"] += job.pages
         else:
@@ -125,6 +204,7 @@ def get_stats_overview(
         total_pages=total_pages,
         bw_pages=bw_pages,
         color_pages=color_pages,
+        total_sheets=total_sheets,
         total_jobs=total_jobs,
         by_printer=by_printer,
         by_user=by_user,

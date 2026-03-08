@@ -52,6 +52,8 @@ class PrintJob(SQLModel, table=True):
 
     pages: int = Field(nullable=False, default=1)
 
+    two_sided: bool = Field(nullable=False, default=False)
+
     color: bool = Field(nullable=False, default=False)
 
     status: JobStatus = Field(
