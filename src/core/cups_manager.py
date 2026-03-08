@@ -1,4 +1,5 @@
 import cups
+import threading
 
 from .logger import logger
 from ..db.models.printerjob import JobStatus
@@ -11,6 +12,9 @@ class CUPSManager:
         except:
             logger.error("Failed to connect to CUPS")
             self.conn = None
+
+        # pycups / libcups is not thread-safe: serialise all calls.
+        self._lock = threading.Lock()
 
         self.CUPS_STATE_MAP = {
             3: "idle",
@@ -39,7 +43,8 @@ class CUPSManager:
             return []
 
         try:
-            printers = self.conn.getPrinters()
+            with self._lock:
+                printers = self.conn.getPrinters()
         except cups.IPPError:
             logger.error("CUPS Error, unable to retrieve printers")
             return []
@@ -69,13 +74,14 @@ class CUPSManager:
         if self.conn is None:
             return ""
         
-        try: 
-            job_id = self.conn.printFile(
-                printer=printer_name,
-                filename=file_path,
-                title=title,
-                options=options
-            )
+        try:
+            with self._lock:
+                job_id = self.conn.printFile(
+                    printer=printer_name,
+                    filename=file_path,
+                    title=title,
+                    options=options
+                )
             return str(job_id)
         
         except cups.IPPError:
@@ -97,7 +103,8 @@ class CUPSManager:
             return None
 
         try:
-            attrs = self.conn.getPrinterAttributes(printer_name)
+            with self._lock:
+                attrs = self.conn.getPrinterAttributes(printer_name)
         except cups.IPPError:
             return None
 
@@ -172,7 +179,8 @@ class CUPSManager:
             return None
 
         try:
-            attrs = self.conn.getJobAttributes(cups_id)
+            with self._lock:
+                attrs = self.conn.getJobAttributes(cups_id)
         except cups.IPPError as e:
             
             if not cups_id in self.jobs_with_error:
