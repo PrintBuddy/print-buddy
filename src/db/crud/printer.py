@@ -27,7 +27,11 @@ class PrinterService:
     def get_all_printers(self, session: Session):
         stmt = select(Printer)
         printers = session.exec(stmt).all()
+        return printers
 
+    def get_active_printers(self, session: Session):
+        stmt = select(Printer).where(Printer.is_active == True)
+        printers = session.exec(stmt).all()
         return printers
     
     def get_printer_by_name(

@@ -25,6 +25,7 @@ class PrinterRead(BaseModel):
     price_per_page_bw: float
     admits_color: bool
     price_per_page_color: float
+    is_active: bool
     updated_at: datetime
 
     @field_validator("state_reasons", mode="before")
@@ -37,6 +38,7 @@ class PrinterAdminUpdate(BaseModel):
     price_per_page_bw: float | None = None
     admits_color: bool | None = None
     price_per_page_color: float | None = None
+    is_active: bool | None = None
 
 
 class TonerMarker(BaseModel):
