@@ -23,6 +23,19 @@ router = APIRouter()
 def get_printers(
     session: SessionDep
 ):
+    printers = printer_service.get_active_printers(session)
+    return printers
+
+
+@router.get(
+    "/all",
+    response_model=list[PrinterRead],
+    status_code=status.HTTP_200_OK
+)
+def get_all_printers(
+    token: AdminTokenDep,
+    session: SessionDep
+):
     printers = printer_service.get_all_printers(session)
     return printers
 

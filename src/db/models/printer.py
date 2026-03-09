@@ -39,6 +39,8 @@ class Printer(SQLModel, table=True):
         sa_column=Column(JSON, nullable=True)
     )
 
+    is_active: bool = Field(default=True, nullable=False)
+
     created_at: datetime = Field(
         default_factory=generate_time, 
         nullable=False
