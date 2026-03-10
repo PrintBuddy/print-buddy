@@ -15,7 +15,6 @@ class PrinterCUPSUpdate(BaseModel):
     location: str
     status: PrinterStatus
     state_reasons: list[str] = []
-    supports_duplex: bool = False
 
 
 class PrinterRead(BaseModel):
@@ -41,6 +40,7 @@ class PrinterAdminUpdate(BaseModel):
     admits_color: bool | None = None
     price_per_page_color: float | None = None
     is_active: bool | None = None
+    supports_duplex: bool | None = None
 
 
 class TonerMarker(BaseModel):
