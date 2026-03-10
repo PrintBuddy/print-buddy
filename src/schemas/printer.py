@@ -47,3 +47,4 @@ class TonerMarker(BaseModel):
     level: int               # -1 means the driver cannot report a value
     low_level: int
     high_level: int
+    marker_type: str | None = None  # e.g. "toner", "ink", "drum", etc.

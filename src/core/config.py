@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE_MB: int
     UPLOAD_PATH: str
 
+    PRINTER_MARKERS_DB: str
+
     EXP_TIME_VOUCHER_MIN: int
 
     TELEGRAM_SECRET: str
