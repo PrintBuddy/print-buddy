@@ -121,11 +121,19 @@ class CUPSManager:
             raw_reasons = attrs.get("printer-state-reasons", [])
             # "none" is CUPS's default value meaning no issues — discard it
             state_reasons = [r for r in raw_reasons if r != "none"]
+            sides_supported = attrs.get("sides-supported", [])
+            if isinstance(sides_supported, str):
+                sides_supported = [sides_supported]
+            supports_duplex = any(
+                s in sides_supported
+                for s in ("two-sided-long-edge", "two-sided-short-edge")
+            )
             result.append({
                 "name": name,
                 "location": attrs.get("printer-location"),
                 "status": self.CUPS_STATE_MAP.get(attrs.get("printer-state"), "unknown"),
                 "state_reasons": state_reasons,
+                "supports_duplex": supports_duplex,
             })
         
         return result

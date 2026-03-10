@@ -15,6 +15,7 @@ class PrinterCUPSUpdate(BaseModel):
     location: str
     status: PrinterStatus
     state_reasons: list[str] = []
+    supports_duplex: bool = False
 
 
 class PrinterRead(BaseModel):
@@ -26,6 +27,7 @@ class PrinterRead(BaseModel):
     admits_color: bool
     price_per_page_color: float
     is_active: bool
+    supports_duplex: bool
     updated_at: datetime
 
     @field_validator("state_reasons", mode="before")

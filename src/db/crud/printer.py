@@ -71,6 +71,7 @@ class PrinterService:
         printer.location = printer_update.location
         printer.status = printer_update.status
         printer.state_reasons = printer_update.state_reasons
+        printer.supports_duplex = printer_update.supports_duplex
         printer.updated_at = generate_time()
 
         session.commit()
