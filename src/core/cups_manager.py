@@ -1,8 +1,72 @@
 import cups
+import json
+import os
+import sqlite3
 import threading
 
 from .logger import logger
 from ..db.models.printerjob import JobStatus
+
+
+class MarkerCache:
+    """
+    Lightweight SQLite-backed store for the last known valid marker readings.
+    Schema: one row per (printer_name, marker_name) holding the full marker
+    dict serialised as JSON.
+    """
+
+    def __init__(self, db_path: str):
+        parent = os.path.dirname(db_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        self._db_path = db_path
+        self._local = threading.local()  # one connection per thread
+        self._init_schema()
+
+    def _conn(self) -> sqlite3.Connection:
+        if not getattr(self._local, "conn", None):
+            conn = sqlite3.connect(self._db_path, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.row_factory = sqlite3.Row
+            self._local.conn = conn
+        return self._local.conn
+
+    def _init_schema(self):
+        self._conn().execute(
+            """
+            CREATE TABLE IF NOT EXISTS marker_cache (
+                printer_name TEXT NOT NULL,
+                marker_name  TEXT NOT NULL,
+                data         TEXT NOT NULL,
+                PRIMARY KEY (printer_name, marker_name)
+            )
+            """
+        )
+        self._conn().commit()
+
+    def get_all(self, printer_name: str) -> dict[str, dict]:
+        """Return {marker_name: marker_dict} for the given printer."""
+        rows = self._conn().execute(
+            "SELECT marker_name, data FROM marker_cache WHERE printer_name = ?",
+            (printer_name,),
+        ).fetchall()
+        return {row["marker_name"]: json.loads(row["data"]) for row in rows}
+
+    def set_many(self, printer_name: str, markers: list[dict]):
+        """Upsert a batch of markers for the given printer."""
+        conn = self._conn()
+        conn.executemany(
+            """
+            INSERT INTO marker_cache (printer_name, marker_name, data)
+            VALUES (?, ?, ?)
+            ON CONFLICT (printer_name, marker_name) DO UPDATE SET data = excluded.data
+            """,
+            [
+                (printer_name, m["name"], json.dumps(m))
+                for m in markers
+            ],
+        )
+        conn.commit()
 
 
 class CUPSManager:
@@ -34,6 +98,9 @@ class CUPSManager:
 
         self.MAX_TRIES = 3
         self.jobs_with_error = {}
+
+        from .config import settings
+        self._marker_cache = MarkerCache(settings.PRINTER_MARKERS_DB)
 
     def get_printers(self) -> list[dict]:
         """
@@ -91,6 +158,50 @@ class CUPSManager:
             print(e)
             return ""
         
+    def _merge_with_cache(self, printer_name: str, raw_markers: list[dict]) -> list[dict]:
+        """
+        Merges a raw marker list with the persistent cache so that:
+        - A marker present with level == -1 is replaced with its last known
+          valid level from the cache (if one exists).
+        - A marker that was previously known but is absent from the current
+          CUPS response is re-inserted from the cache.
+        The cache itself is updated with every valid (level != -1) reading.
+        """
+        with self._lock:
+            printer_cache = self._marker_cache.get_all(printer_name)
+
+            to_persist: list[dict] = []
+            for m in raw_markers:
+                if m["level"] != -1:
+                    to_persist.append(m)
+                elif m["name"] not in printer_cache:
+                    # No prior reading; register so the marker is known.
+                    to_persist.append(m)
+
+            if to_persist:
+                self._marker_cache.set_many(printer_name, to_persist)
+                for m in to_persist:
+                    printer_cache[m["name"]] = m
+
+            seen = {m["name"] for m in raw_markers}
+
+            merged = []
+            for m in raw_markers:
+                if m["level"] != -1:
+                    merged.append(m)
+                else:
+                    cached = printer_cache.get(m["name"])
+                    merged.append(
+                        cached if (cached and cached["level"] != -1) else m
+                    )
+
+            # Re-insert markers absent from the current CUPS response.
+            for name, cached_m in printer_cache.items():
+                if name not in seen:
+                    merged.append(dict(cached_m))
+
+        return merged
+
     def get_toner_levels(self, printer_name: str) -> list[dict] | None:
         """
         Returns toner/ink marker levels for the given CUPS printer.
@@ -114,6 +225,7 @@ class CUPSManager:
             colors = attrs.get("marker-colors")
             low = attrs.get("marker-low-levels")
             high = attrs.get("marker-high-levels")
+            types = attrs.get("marker-types")
 
             if levels is None or names is None:
                 return []
@@ -144,6 +256,11 @@ class CUPSManager:
                 if high is not None
                 else [100] * len(names)
             )
+            types = (
+                [str(x) if x is not None else None for x in to_list(types)]
+                if types is not None
+                else [None] * len(names)
+            )
 
             n = len(names)
             if n == 0:
@@ -159,17 +276,22 @@ class CUPSManager:
                 high = high[-n:]
             if len(colors) > n:
                 colors = colors[-n:]
+            if len(types) > n:
+                types = types[-n:]
 
-            return [
+            raw_markers = [
                 {
                     "name": names[i],
                     "color": colors[i] if i < len(colors) else None,
                     "level": levels[i] if i < len(levels) else -1,
                     "low_level": low[i] if i < len(low) else 10,
                     "high_level": high[i] if i < len(high) else 100,
+                    "marker_type": types[i] if i < len(types) else None,
                 }
                 for i in range(n)
             ]
+
+            return self._merge_with_cache(printer_name, raw_markers)
         except Exception:
             logger.error(f"Unexpected error parsing toner levels for {printer_name}")
             return []
