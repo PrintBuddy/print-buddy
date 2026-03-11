@@ -9,14 +9,6 @@ from ..db.models.printerjob import JobStatus
 
 
 class MarkerCache:
-        def delete_all(self, printer_name: str):
-            """Delete all marker cache rows for the given printer."""
-            conn = self._conn()
-            conn.execute(
-                "DELETE FROM marker_cache_v2 WHERE printer_name = ?",
-                (printer_name,)
-            )
-            conn.commit()
     """
     Lightweight SQLite-backed store for the last known valid marker readings.
     Schema: one row per (printer_name, marker_index) holding the full marker
@@ -74,6 +66,15 @@ class MarkerCache:
                 (printer_name, idx, json.dumps(m))
                 for idx, m in indexed_markers
             ],
+        )
+        conn.commit()
+
+    def delete_all(self, printer_name: str):
+        """Delete all marker cache rows for the given printer."""
+        conn = self._conn()
+        conn.execute(
+            "DELETE FROM marker_cache_v2 WHERE printer_name = ?",
+            (printer_name,)
         )
         conn.commit()
 
