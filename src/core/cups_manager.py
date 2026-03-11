@@ -11,8 +11,9 @@ from ..db.models.printerjob import JobStatus
 class MarkerCache:
     """
     Lightweight SQLite-backed store for the last known valid marker readings.
-    Schema: one row per (printer_name, marker_name) holding the full marker
-    dict serialised as JSON.
+    Schema: one row per (printer_name, marker_index) holding the full marker
+    dict serialised as JSON.  Index is the 0-based position in the CUPS
+    marker arrays, which is stable across polls even if the name changes.
     """
 
     def __init__(self, db_path: str):
@@ -34,36 +35,36 @@ class MarkerCache:
     def _init_schema(self):
         self._conn().execute(
             """
-            CREATE TABLE IF NOT EXISTS marker_cache (
-                printer_name TEXT NOT NULL,
-                marker_name  TEXT NOT NULL,
-                data         TEXT NOT NULL,
-                PRIMARY KEY (printer_name, marker_name)
+            CREATE TABLE IF NOT EXISTS marker_cache_v2 (
+                printer_name  TEXT    NOT NULL,
+                marker_index  INTEGER NOT NULL,
+                data          TEXT    NOT NULL,
+                PRIMARY KEY (printer_name, marker_index)
             )
             """
         )
         self._conn().commit()
 
-    def get_all(self, printer_name: str) -> dict[str, dict]:
-        """Return {marker_name: marker_dict} for the given printer."""
+    def get_all(self, printer_name: str) -> dict[int, dict]:
+        """Return {marker_index: marker_dict} for the given printer."""
         rows = self._conn().execute(
-            "SELECT marker_name, data FROM marker_cache WHERE printer_name = ?",
+            "SELECT marker_index, data FROM marker_cache_v2 WHERE printer_name = ?",
             (printer_name,),
         ).fetchall()
-        return {row["marker_name"]: json.loads(row["data"]) for row in rows}
+        return {row["marker_index"]: json.loads(row["data"]) for row in rows}
 
-    def set_many(self, printer_name: str, markers: list[dict]):
-        """Upsert a batch of markers for the given printer."""
+    def set_many(self, printer_name: str, indexed_markers: list[tuple[int, dict]]):
+        """Upsert a batch of (index, marker_dict) pairs for the given printer."""
         conn = self._conn()
         conn.executemany(
             """
-            INSERT INTO marker_cache (printer_name, marker_name, data)
+            INSERT INTO marker_cache_v2 (printer_name, marker_index, data)
             VALUES (?, ?, ?)
-            ON CONFLICT (printer_name, marker_name) DO UPDATE SET data = excluded.data
+            ON CONFLICT (printer_name, marker_index) DO UPDATE SET data = excluded.data
             """,
             [
-                (printer_name, m["name"], json.dumps(m))
-                for m in markers
+                (printer_name, idx, json.dumps(m))
+                for idx, m in indexed_markers
             ],
         )
         conn.commit()
@@ -166,38 +167,40 @@ class CUPSManager:
         - A marker that was previously known but is absent from the current
           CUPS response is re-inserted from the cache.
         The cache itself is updated with every valid (level != -1) reading.
+        Markers are matched by their 0-based position (index) so that a name
+        change between polls simply overwrites the cached name.
         """
         with self._lock:
-            printer_cache = self._marker_cache.get_all(printer_name)
+            printer_cache = self._marker_cache.get_all(printer_name)  # {index: dict}
 
-            to_persist: list[dict] = []
-            for m in raw_markers:
+            to_persist: list[tuple[int, dict]] = []
+            for i, m in enumerate(raw_markers):
                 if m["level"] != -1:
-                    to_persist.append(m)
-                elif m["name"] not in printer_cache:
+                    to_persist.append((i, m))
+                elif i not in printer_cache:
                     # No prior reading; register so the marker is known.
-                    to_persist.append(m)
+                    to_persist.append((i, m))
 
             if to_persist:
                 self._marker_cache.set_many(printer_name, to_persist)
-                for m in to_persist:
-                    printer_cache[m["name"]] = m
+                for idx, m in to_persist:
+                    printer_cache[idx] = m
 
-            seen = {m["name"] for m in raw_markers}
+            seen_indices = set(range(len(raw_markers)))
 
             merged = []
-            for m in raw_markers:
+            for i, m in enumerate(raw_markers):
                 if m["level"] != -1:
                     merged.append(m)
                 else:
-                    cached = printer_cache.get(m["name"])
+                    cached = printer_cache.get(i)
                     merged.append(
                         cached if (cached and cached["level"] != -1) else m
                     )
 
             # Re-insert markers absent from the current CUPS response.
-            for name, cached_m in printer_cache.items():
-                if name not in seen:
+            for idx, cached_m in printer_cache.items():
+                if idx not in seen_indices:
                     merged.append(dict(cached_m))
 
         return merged
@@ -265,19 +268,6 @@ class CUPSManager:
             n = len(names)
             if n == 0:
                 return []
-
-            # Some drivers prepend internal/waste-toner slots that are not named;
-            # align from the end so the named markers match correctly.
-            if len(levels) > n:
-                levels = levels[-n:]
-            if len(low) > n:
-                low = low[-n:]
-            if len(high) > n:
-                high = high[-n:]
-            if len(colors) > n:
-                colors = colors[-n:]
-            if len(types) > n:
-                types = types[-n:]
 
             raw_markers = [
                 {
