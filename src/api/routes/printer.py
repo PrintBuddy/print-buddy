@@ -26,7 +26,19 @@ def get_printers(
     session: SessionDep
 ):
     user_id = uuid.UUID(token.credentials)
-    return group_service.get_accessible_printers(user_id, session)
+    printers = group_service.get_accessible_printers(user_id, session)
+
+    result = []
+    for printer in printers:
+        effective_bw, effective_color = group_service.get_effective_prices(user_id, printer.id, session)
+        data = printer.model_dump()
+        if effective_bw is not None:
+            data["price_per_page_bw"] = effective_bw
+        if effective_color is not None:
+            data["price_per_page_color"] = effective_color
+        result.append(data)
+
+    return result
 
 
 @router.get(
