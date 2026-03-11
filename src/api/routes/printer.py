@@ -153,5 +153,8 @@ def delete_printer(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Printer not found"
         )
-    
+
+    # Delete marker cache data for this printer
+    cups_manager._marker_cache.delete_all(name)
+
     return printer
