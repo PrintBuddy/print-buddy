@@ -1,15 +1,16 @@
 from fastapi import APIRouter, status, HTTPException
+import uuid
 
 from ..dependencies.database import SessionDep
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ...db.crud.printer import PrinterService
-from ...db.crud.user import UserService
+from ...db.crud.group import GroupService
 from ...schemas.printer import PrinterRead, PrinterCreate, PrinterAdminUpdate, TonerMarker
 from ...core.cups_manager import CUPSManager
 
 
 printer_service = PrinterService()
-user_service = UserService()
+group_service = GroupService()
 cups_manager = CUPSManager()
 
 router = APIRouter()
@@ -21,10 +22,11 @@ router = APIRouter()
     status_code=status.HTTP_200_OK
 )
 def get_printers(
+    token: TokenDep,
     session: SessionDep
 ):
-    printers = printer_service.get_active_printers(session)
-    return printers
+    user_id = uuid.UUID(token.credentials)
+    return group_service.get_accessible_printers(user_id, session)
 
 
 @router.get(

@@ -43,6 +43,13 @@ class PrinterService:
         printer = session.exec(stmt).first()
         
         return printer
+
+    def get_printer_by_id(
+        self,
+        printer_id,
+        session: Session
+    ):
+        return session.get(Printer, printer_id)
     
     def calculate_cost(
         self,

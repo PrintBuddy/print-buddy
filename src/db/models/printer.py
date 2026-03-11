@@ -41,6 +41,8 @@ class Printer(SQLModel, table=True):
 
     is_active: bool = Field(default=True, nullable=False)
 
+    is_restricted: bool = Field(default=False, nullable=False)
+
     supports_duplex: bool = Field(default=False, nullable=False)
 
     created_at: datetime = Field(

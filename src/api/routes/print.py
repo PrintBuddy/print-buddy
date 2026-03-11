@@ -1,4 +1,5 @@
 from fastapi import APIRouter, status, HTTPException
+import uuid
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
@@ -7,6 +8,7 @@ from ...schemas.print import PrintOptions
 from ...schemas.printjob import PrintJobCreate, PrintJobRead, PrintJobAdminRead
 
 from ...db.crud.printjob import PrintJobService
+from ...db.crud.group import GroupService
 
 from ...core.utils import count_pages_in_range
 from ...core.print_assistant import PrintAssistant
@@ -17,6 +19,7 @@ router = APIRouter()
 
 print_assistant = PrintAssistant()
 pj_service = PrintJobService()
+group_service = GroupService()
 
 
 @router.get(
@@ -50,6 +53,15 @@ def print_file(
     # VERIFY PRINTER'S EXISTENCE
     printer = print_assistant.get_printer(printer_name, session)
 
+    # CHECK USER HAS ACCESS TO RESTRICTED PRINTERS
+    if printer.is_restricted:
+        if not group_service.user_can_access_printer(uuid.UUID(user_id), printer.id, session):
+            logger.error(f"User {user_id} has no access to restricted printer {printer_name}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this printer"
+            )
+
     # VERIFY FILE'S EXISTENCE AND BELONGING
     file = print_assistant.get_file_to_print(user_id, file_id, session)
 
@@ -62,8 +74,22 @@ def print_file(
             detail="Printer does not admit color"
         )
 
-    # CALCULATE PRICE
-    price_per_page = printer.price_per_page_color if color else printer.price_per_page_bw
+    # CALCULATE PRICE — apply group custom prices if available
+    effective_bw, effective_color = group_service.get_effective_prices(
+        uuid.UUID(user_id), printer.id, session
+    )
+    if color:
+        price_per_page = (
+            effective_color
+            if effective_color is not None
+            else printer.price_per_page_color
+        )
+    else:
+        price_per_page = (
+            effective_bw
+            if effective_bw is not None
+            else printer.price_per_page_bw
+        )
     if print_options.page_ranges == "all":
         pages = file.pages
     else:
