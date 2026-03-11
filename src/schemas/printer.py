@@ -1,5 +1,6 @@
 from pydantic import BaseModel, field_validator
 from datetime import datetime
+import uuid
 
 from ..db.models.printer import PrinterStatus
 
@@ -18,6 +19,7 @@ class PrinterCUPSUpdate(BaseModel):
 
 
 class PrinterRead(BaseModel):
+    id: uuid.UUID
     name: str
     location: str
     status: PrinterStatus
@@ -26,6 +28,7 @@ class PrinterRead(BaseModel):
     admits_color: bool
     price_per_page_color: float
     is_active: bool
+    is_restricted: bool
     supports_duplex: bool
     updated_at: datetime
 
@@ -40,6 +43,7 @@ class PrinterAdminUpdate(BaseModel):
     admits_color: bool | None = None
     price_per_page_color: float | None = None
     is_active: bool | None = None
+    is_restricted: bool | None = None
     supports_duplex: bool | None = None
 
 

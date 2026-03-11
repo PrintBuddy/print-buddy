@@ -36,7 +36,7 @@ class PrintJob(SQLModel, table=True):
         primary_key=True
     )
 
-    cups_id: str = Field(nullable=False, unique=True)
+    cups_id: str = Field(nullable=False)
 
     user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE")
 
