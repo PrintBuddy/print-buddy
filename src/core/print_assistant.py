@@ -132,6 +132,9 @@ class PrintAssistant:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Unable to send print job to CUPS service"
             )
+
+        # UPDATE TONER LEVELS
+        cups_mgr.get_toner_levels(printer_name)
     
         pj = pj_service.create_job(
             cups_id=cups_id,
