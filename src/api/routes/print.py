@@ -120,7 +120,7 @@ def print_file(
         file=file,
         print_options=print_options,
         cost=total_price,
-        pages=pages
+        pages=pages * print_options.copies
     )
 
     pj = print_assistant.send_print_job(
