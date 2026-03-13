@@ -52,3 +52,11 @@ class ActivityLogEntry(BaseModel):
     balance_after: float | None = None
     note: str | None = None
     created_at: datetime
+
+
+class ADConfigSchema(BaseModel):
+    enabled: bool = False
+    institution_name: str = ""
+    server: str
+    domain: str
+    base_dn: str

@@ -1,18 +1,25 @@
 from fastapi import APIRouter, status, BackgroundTasks
 from fastapi import HTTPException
 
+from .settings import AD_CONFIG_KEY
+
 from ..dependencies.database import SessionDep
 
 from ...schemas.user import UserCreate, UserRead, UserLogin, UserEmailRequest, UserBase, UserPwdReset
 from ...schemas.token import AccessTokenResponse
 
 from ...db.crud.user import UserService
+from ...db.crud.app_config import AppConfigService
 
 from ...core.security import Security
 from ...core.mail_assistant import send_reset_email
+from ...core.ldap_assistant import LDAPAssistant
 
 
 user_service = UserService()
+config_service = AppConfigService()  
+ldap_assistant = LDAPAssistant()
+
 router = APIRouter()
 
 
@@ -27,7 +34,7 @@ def register(
 ):
     
     email = user.email
-    email_exists = user_service.email_exists(email, session)
+    email_exists = user_service.email_exists(email, session) if email else True
     if email_exists:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -72,6 +79,22 @@ def login(
         token = Security.create_token(data=payload)
 
         return AccessTokenResponse(token=token)
+
+    # VERIFY WITH ACTIVE DIRECTORY IF ENABLED
+    ad_config = config_service.get(AD_CONFIG_KEY, session)
+    if ad_config and ad_config.get("enabled", False):
+        server = ad_config.get("server")
+        base_dn = ad_config.get("base_dn")
+        domain = ad_config.get("domain")
+
+        ldap_assistant.configure(server, domain, base_dn)
+        ldap_user = ldap_assistant.login_user(username, pwd, session)
+        if ldap_user:
+            payload = {"uid": str(ldap_user.id)}  # type: ignore
+            token = Security.create_token(data=payload)
+
+            return AccessTokenResponse(token=token)
+
     
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
