@@ -10,7 +10,7 @@ from ...db.crud.user import UserService
 from ...db.models.transaction import Transaction, TransactionType
 from ...db.models.refund_request import RefundRequest, RefundStatus
 from ...db.models.user import User
-from ...schemas.settings import RechargeInfoSchema, TelegramAdminRead, TelegramAdminCreate, ActivityLogEntry, TonerAlertConfig
+from ...schemas.settings import RechargeInfoSchema, TelegramAdminRead, TelegramAdminCreate, ActivityLogEntry, TonerAlertConfig, ADConfigSchema
 from ...core.mail_assistant import send_toner_alert_email
 
 
@@ -19,9 +19,41 @@ config_service = AppConfigService()
 ta_service = TelegramAdminService()
 user_service = UserService()
 
+
 RECHARGE_KEY = "recharge_info"
 TONER_ALERT_KEY = "toner_alert_config"
 TONER_ALERT_DEFAULT = {"enabled": False, "interval_hours": 24}
+AD_CONFIG_KEY = "ad_config"
+AD_CONFIG_DEFAULT = {"enabled": False, "institution_name": "", "server": "", "domain": "", "base_dn": ""}
+
+
+# ─── AD Config ────────────────────────────────────────────────────────────────
+
+@router.get(
+    "/ad-config",
+    response_model=ADConfigSchema,
+    status_code=status.HTTP_200_OK
+)
+def get_ad_config(
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    data = config_service.get(AD_CONFIG_KEY, session)
+    return ADConfigSchema(**(data or AD_CONFIG_DEFAULT))
+
+
+@router.put(
+    "/ad-config",
+    response_model=ADConfigSchema,
+    status_code=status.HTTP_200_OK
+)
+def update_ad_config(
+    body: ADConfigSchema,
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    config_service.set(AD_CONFIG_KEY, body.model_dump(), session)
+    return body
 
 
 # ─── Recharge Info ─────────────────────────────────────────────────────────────

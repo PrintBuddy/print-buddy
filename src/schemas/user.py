@@ -3,15 +3,16 @@ from datetime import datetime
 import re
 import uuid
 
-_USERNAME_REGEX = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]{2,19}$')
+_USERNAME_REGEX = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_.-]{2,19}$')
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: EmailStr | None = None
     username: str
     name: str
     surname: str
     pwd: str
+    email_to_set: bool = False
 
     @field_validator("username")
     @classmethod
@@ -30,13 +31,14 @@ class UserLogin(BaseModel):
 
 
 class UserRead(BaseModel):
-    email: EmailStr
+    email: EmailStr | None = None
     username: str
     name: str
     surname: str
     balance: float
     credit_limit: float
     is_admin: bool
+    email_to_set: bool
 
 
 class UserAdminRead(UserRead):

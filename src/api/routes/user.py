@@ -5,7 +5,7 @@ import uuid
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
 
-from ...schemas.user import UserRead, UserUpdate, UserAdminRead, UserChangePassword, UserAdminUpdate
+from ...schemas.user import UserRead, UserUpdate, UserAdminRead, UserEmailRequest, UserChangePassword, UserAdminUpdate
 from ...db.crud.user import UserService
 
 from ...schemas.transaction import TransactionCreate, TransactionRead
@@ -135,6 +135,36 @@ def change_password(
     return { "success": True }
 
 
+@router.patch(
+    '/me/email',
+    response_model=UserRead,
+    status_code=status.HTTP_200_OK
+)
+def update_my_email(
+    email_req: UserEmailRequest,
+    token: TokenDep,
+    session: SessionDep
+):
+    user_id = token.credentials
+    email = email_req.email
+    # Check if email already exists for another user
+    email_exists = user_service.email_exists(email, session, exclude_id=user_id)
+    if email_exists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail='Email already exists'
+        )
+    # Only update the email field
+    user_data = UserUpdate(email=email)
+    user = user_service.update_user(user_id, user_data, session)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail='User not found'
+        )
+    return user
+
+
 @router.get(
     '',
     response_model=list[UserAdminRead],
@@ -245,7 +275,7 @@ def recharge_user_balance(
         type=TransactionType.RECHARGE,
         amount=amount,
         balance_after=balance,  # type: ignore
-        note=f"Recharge by admin {admin}"
+        note=f"Recharge by {admin}"
     )
     tx_service.create_transaction(tx_data, session)
     return user_service.get_user_by_id(user_id, session)
@@ -286,7 +316,7 @@ def adjust_user_balance(
         type=TransactionType.ADJUSTMENT,
         amount=diff,
         balance_after=balance,  # type: ignore
-        note=f"Balance adjustment by admin {admin}"
+        note=f"Balance adjustment by {admin}"
     )
 
     tx_service.create_transaction(tx_data, session)

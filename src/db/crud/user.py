@@ -151,6 +151,9 @@ class UserService:
         for key, value in data.items():
             setattr(user, key, value)
 
+        if user_data.email is not None:
+            user.email_to_set = False
+
         session.commit()
 
         return user

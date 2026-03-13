@@ -14,10 +14,9 @@ class User(SQLModel, table=True):
         index=True
     )
 
-    email: EmailStr = Field(
-        index=True, 
+    email: EmailStr = Field( 
         unique=True, 
-        nullable=False
+        nullable=True
     )
 
     username: str = Field(
@@ -43,6 +42,8 @@ class User(SQLModel, table=True):
     balance: float = Field(nullable=False, default=0.0)
 
     credit_limit: float = Field(nullable=False, default=0.0)
+
+    email_to_set: bool = Field(default=False)
 
     created_at: datetime = Field(
         default_factory=generate_time, 
