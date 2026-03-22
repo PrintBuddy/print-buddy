@@ -32,6 +32,7 @@ class RechargeRequestAction(str, Enum):
 class TelegramRechargeRequestCreate(TelegramID):
     username: str
     amount: float
+    message: str | None = None
     telegram_username: str | None = None
     telegram_first_name: str | None = None
     telegram_last_name: str | None = None
@@ -46,6 +47,7 @@ class TelegramRechargeRequestRead(BaseModel):
     user_id: uuid.UUID
     username: str
     amount: float
+    message: str | None = None
     status: RechargeRequestStatus
     requester_chat_id: str
     requester_telegram_username: str | None = None

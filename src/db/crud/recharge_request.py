@@ -17,6 +17,7 @@ class RechargeRequestService:
             user_id=uuid.UUID(user_id),
             username=data.username,
             amount=data.amount,
+            message=data.message,
             requester_chat_id=data.chat_id,
             requester_telegram_username=data.telegram_username,
             requester_first_name=data.telegram_first_name,
