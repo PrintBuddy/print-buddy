@@ -15,6 +15,7 @@ from ...db.models.transaction import TransactionType
 from ...core.file_manager import FileManager
 from ...core.config import settings
 from ...core.security import Security
+from ...core.utils import round_money
 
 
 router = APIRouter()
@@ -253,6 +254,8 @@ def recharge_user_balance(
     session: SessionDep
 ):
     """Add a positive credit amount to a user's balance and record it as a RECHARGE transaction."""
+    amount = round_money(amount)
+
     if amount <= 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -301,8 +304,9 @@ def adjust_user_balance(
             detail="User not found"
         )
     
-    balance = user.balance
-    diff = amount - balance
+    target_balance = round_money(amount)
+    balance = round_money(user.balance)
+    diff = round_money(target_balance - balance)
     if diff >= 0:
         user_service.add_credit(user_id, diff, session)
     else:

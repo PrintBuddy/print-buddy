@@ -1,7 +1,20 @@
+import uuid
+
 from fastapi import APIRouter, status, HTTPException
+from fastapi.responses import JSONResponse
+from sqlmodel import select
+
 from ..dependencies.database import SessionDep
 
-from ...schemas.telegram import GenerateVoucher, TelegramID, UserBalance
+from ...schemas.telegram import (
+    GenerateVoucher,
+    RechargeRequestAction,
+    TelegramID,
+    TelegramRechargeRequestCreate,
+    TelegramRechargeRequestResolve,
+    TelegramRechargeRequestResult,
+    UserBalance,
+)
 from ...schemas.voucher import VoucherRead
 from ...schemas.user import UserRead, UserAdminRead
 from ...core.voucher_assistant import VoucherAssistant
@@ -9,9 +22,12 @@ from ...db.crud.user import UserService
 
 from ...schemas.transaction import TransactionCreate
 from ...db.crud.transaction import TransactionService
-from ...db.models.transaction import TransactionType
+from ...db.models.transaction import Transaction, TransactionType
 
 from ...db.crud.telegram_admin import TelegramAdminService
+from ...db.crud.recharge_request import RechargeRequestService
+from ...db.models.recharge_request import RechargeRequest, RechargeRequestStatus
+from ...core.utils import round_money
 
 
 router = APIRouter()
@@ -19,6 +35,7 @@ voucher_assistant = VoucherAssistant()
 user_service = UserService()
 tx_service = TransactionService()
 ta_service = TelegramAdminService()
+recharge_request_service = RechargeRequestService()
 
 
 def _require_telegram_admin(chat_id: str, session) -> str:
@@ -30,6 +47,23 @@ def _require_telegram_admin(chat_id: str, session) -> str:
             detail="Telegram ID not allowed"
         )
     return str(ta.user_id)
+
+
+def _serialize_recharge_request(request: RechargeRequest) -> dict:
+    return {
+        "id": request.id,
+        "user_id": request.user_id,
+        "username": request.username,
+        "amount": round_money(request.amount),
+        "status": request.status,
+        "requester_chat_id": request.requester_chat_id,
+        "requester_telegram_username": request.requester_telegram_username,
+        "requester_first_name": request.requester_first_name,
+        "requester_last_name": request.requester_last_name,
+        "resolved_by_username": request.resolved_by_username,
+        "created_at": request.created_at,
+        "updated_at": request.updated_at,
+    }
 
 
 @router.get(
@@ -109,10 +143,10 @@ def adjust_balance(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
     user_id = str(user.id)
-    amount = adjust_data.amount
+    amount = round_money(adjust_data.amount)
 
-    balance = user.balance
-    diff = amount - balance
+    balance = round_money(user.balance)
+    diff = round_money(amount - balance)
     if diff >= 0:
         user_service.add_credit(user_id, diff, session)
     else:
@@ -149,7 +183,7 @@ def recharge_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
     user_id = str(user.id)
-    amount = recharge_info.amount
+    amount = round_money(recharge_info.amount)
 
     success = user_service.add_credit(user_id, amount, session)
     if not success:
@@ -172,6 +206,104 @@ def recharge_user(
     tx_service.create_transaction(tx_data, session)
     
     return { "success": True }
+
+
+@router.post(
+    "/recharge-requests",
+    status_code=status.HTTP_201_CREATED,
+    response_model=TelegramRechargeRequestResult
+)
+def create_recharge_request(
+    request_data: TelegramRechargeRequestCreate,
+    session: SessionDep
+):
+    amount = round_money(request_data.amount)
+    if amount <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be a positive number")
+
+    user = user_service.get_user_by_username(request_data.username, session)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    admin_chat_ids = ta_service.get_all_chat_ids(session)
+    if not admin_chat_ids:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="No Telegram admins configured")
+
+    request_data.amount = amount
+    request = recharge_request_service.create_recharge_request(str(user.id), request_data, session)
+
+    return {
+        "request": _serialize_recharge_request(request),
+        "admin_chat_ids": admin_chat_ids,
+        "user_name": user.name,
+        "user_surname": user.surname,
+    }
+
+
+@router.patch(
+    "/recharge-requests/{request_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=TelegramRechargeRequestResult
+)
+def resolve_recharge_request(
+    request_id: str,
+    resolve_data: TelegramRechargeRequestResolve,
+    session: SessionDep
+):
+    admin_id = _require_telegram_admin(resolve_data.chat_id, session)
+    admin_username = user_service.get_username_by_id(admin_id, session)
+    if admin_username is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin user not found")
+
+    stmt = (
+        select(RechargeRequest)
+        .where(RechargeRequest.id == uuid.UUID(request_id))
+        .with_for_update()
+    )
+    request = session.exec(stmt).first()
+    if request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recharge request not found")
+
+    user = user_service.get_user_by_id(str(request.user_id), session)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if request.status != RechargeRequestStatus.PENDING:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": "Recharge request has already been resolved",
+                "status": request.status.value,
+                "resolved_by_username": request.resolved_by_username,
+            },
+        )
+
+    if resolve_data.action == RechargeRequestAction.APPROVE:
+        user.balance = round_money(user.balance + request.amount)
+        tx_data = TransactionCreate(
+            user_id=user.id,
+            type=TransactionType.RECHARGE,
+            amount=request.amount,
+            balance_after=user.balance,
+            note=f"Recharge request approved by {admin_username}"
+        )
+        session.add(Transaction(**tx_data.model_dump()))
+        request.status = RechargeRequestStatus.APPROVED
+    else:
+        request.status = RechargeRequestStatus.REJECTED
+
+    request.resolved_by_username = admin_username
+    session.add(user)
+    session.add(request)
+    session.commit()
+    session.refresh(request)
+
+    return {
+        "request": _serialize_recharge_request(request),
+        "admin_chat_ids": ta_service.get_all_chat_ids(session),
+        "user_name": user.name,
+        "user_surname": user.surname,
+    }
 
 
 @router.post(

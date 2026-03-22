@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 import re
 import string
 import secrets
@@ -6,6 +7,13 @@ import secrets
 
 def generate_time() -> datetime:
     return datetime.now(timezone.utc)
+
+
+MONEY_QUANTIZER = Decimal("0.01")
+
+
+def round_money(value: float | int | Decimal) -> float:
+    return float(Decimal(str(value)).quantize(MONEY_QUANTIZER, rounding=ROUND_HALF_UP))
 
 
 PAGE_RANGE_REGEX = re.compile(r'^\s*(\d+(-\d+)?)(\s*,\s*(\d+(-\d+)?))*\s*$')

@@ -16,6 +16,7 @@ from ..schemas.transaction import TransactionCreate
 from .cups_manager import CUPSManager
 
 from .logger import logger
+from .utils import round_money
 
 
 user_service = UserService()
@@ -93,7 +94,10 @@ class PrintAssistant:
                 detail="User not found"
             )
 
-        return user_balance >= cost - user_credit_limit
+        available_credit = round_money(user_balance + user_credit_limit)
+        required_credit = round_money(cost)
+
+        return available_credit >= required_credit
     
     def discount_credit(
         self,
@@ -153,7 +157,7 @@ class PrintAssistant:
         tx_data = TransactionCreate(
             user_id=uuid.UUID(printjob.user_id),
             type=TransactionType.PRINT,
-            amount=-printjob.cost,
+            amount=-round_money(printjob.cost),
             balance_after=balance,  # type: ignore
             note=f"Printed file: {pj.file_name}"
         )

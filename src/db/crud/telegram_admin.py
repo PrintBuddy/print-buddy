@@ -44,6 +44,13 @@ class TelegramAdminService:
         stmt = select(TelegramAdmin)
         return session.exec(stmt).all()
 
+    def get_all_chat_ids(
+        self,
+        session: Session
+    ) -> list[str]:
+        stmt = select(TelegramAdmin.telegram_id)
+        return list(session.exec(stmt).all())
+
     def delete_telegram_admin(
         self,
         user_id: str,

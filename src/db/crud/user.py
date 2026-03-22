@@ -3,6 +3,7 @@ from sqlmodel import Session, select
 
 from ..models.user import User
 from ...schemas.user import UserCreate, UserUpdate, UserChangePassword
+from ...core.utils import round_money
 
 
 class UserService:
@@ -121,7 +122,9 @@ class UserService:
     ):
         stmt = select(User.balance).where(User.id == user_id)
         balance = session.exec(stmt).first()
-        return balance
+        if balance is None:
+            return None
+        return round_money(balance)
     
     def get_user_credit_limit(
         self,
@@ -130,7 +133,9 @@ class UserService:
     ):
         stmt = select(User.credit_limit).where(User.id == user_id)
         credit_limit = session.exec(stmt).first()
-        return credit_limit
+        if credit_limit is None:
+            return None
+        return round_money(credit_limit)
     
     ######################## UPDATE ##########################
 
@@ -148,6 +153,10 @@ class UserService:
             return
         
         data = user_data.model_dump(exclude_none=True)
+        if "balance" in data:
+            data["balance"] = round_money(data["balance"])
+        if "credit_limit" in data:
+            data["credit_limit"] = round_money(data["credit_limit"])
         for key, value in data.items():
             setattr(user, key, value)
 
@@ -183,7 +192,7 @@ class UserService:
         if user is None:
             return False
         
-        user.balance -= cost
+        user.balance = round_money(user.balance - cost)
         session.commit()
 
         return True
@@ -195,7 +204,7 @@ class UserService:
         if user is None:
             return False
         
-        user.balance += amount
+        user.balance = round_money(user.balance + amount)
         session.commit()
 
         return True
@@ -217,6 +226,5 @@ class UserService:
         session.commit()
         return user
         
-
 
 

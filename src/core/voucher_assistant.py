@@ -13,7 +13,7 @@ from ..core.config import settings
 from ..schemas.voucher import VoucherCreate, VoucherRedeem
 from ..schemas.transaction import TransactionCreate
 
-from ..core.utils import generate_code, generate_time
+from ..core.utils import generate_code, generate_time, round_money
 from .logger import logger
 
 
@@ -118,7 +118,7 @@ class VoucherAssistant:
                 detail="User not found"
             )
         
-        amount = voucher.amount
+        amount = round_money(voucher.amount)
         success = user_service.add_credit(user_id, amount, session)
         
         if not success:
