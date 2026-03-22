@@ -10,7 +10,7 @@ from ...schemas.printjob import PrintJobCreate, PrintJobRead, PrintJobAdminRead
 from ...db.crud.printjob import PrintJobService
 from ...db.crud.group import GroupService
 
-from ...core.utils import count_pages_in_range
+from ...core.utils import count_pages_in_range, round_money
 from ...core.print_assistant import PrintAssistant
 from ...core.logger import logger
 
@@ -102,7 +102,7 @@ def print_file(
             detail="Invalid format of page-ranges"
         )
 
-    total_price = pages * print_options.copies * price_per_page
+    total_price = round_money(pages * print_options.copies * price_per_page)
 
     # VERIFY ENOUGH USER CREDITS
     enough_credits = print_assistant.check_enough_credit(user_id, total_price, session)

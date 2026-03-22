@@ -1,7 +1,9 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_serializer, field_validator
 from datetime import datetime
 import re
 import uuid
+
+from ..core.utils import round_money
 
 _USERNAME_REGEX = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_.-]{2,19}$')
 
@@ -40,6 +42,10 @@ class UserRead(BaseModel):
     is_admin: bool
     email_to_set: bool
 
+    @field_serializer("balance", "credit_limit")
+    def serialize_money(self, value: float) -> float:
+        return round_money(value)
+
 
 class UserAdminRead(UserRead):
     id: uuid.UUID
@@ -70,6 +76,13 @@ class UserAdminUpdate(UserUpdate):
     credit_limit: float | None = None
     is_active: bool | None = None
     is_admin: bool | None = None
+
+    @field_validator("balance", "credit_limit")
+    @classmethod
+    def validate_money_fields(cls, value: float | None) -> float | None:
+        if value is None:
+            return None
+        return round_money(value)
 
 
 class UserChangePassword(BaseModel):

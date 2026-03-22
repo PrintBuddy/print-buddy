@@ -12,6 +12,7 @@ from ...db.crud.transaction import TransactionService
 from ...db.models.transaction import TransactionType
 
 from ...db.crud.telegram_admin import TelegramAdminService
+from ...core.utils import round_money
 
 
 router = APIRouter()
@@ -109,10 +110,10 @@ def adjust_balance(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
     user_id = str(user.id)
-    amount = adjust_data.amount
+    amount = round_money(adjust_data.amount)
 
-    balance = user.balance
-    diff = amount - balance
+    balance = round_money(user.balance)
+    diff = round_money(amount - balance)
     if diff >= 0:
         user_service.add_credit(user_id, diff, session)
     else:
@@ -149,7 +150,7 @@ def recharge_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
     user_id = str(user.id)
-    amount = recharge_info.amount
+    amount = round_money(recharge_info.amount)
 
     success = user_service.add_credit(user_id, amount, session)
     if not success:
