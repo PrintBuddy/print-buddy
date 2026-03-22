@@ -20,7 +20,7 @@ class UserCreate(BaseModel):
         if not _USERNAME_REGEX.match(v):
             raise ValueError(
                 "Username must be 3–20 characters long, start with a letter or "
-                "underscore, and contain only letters, digits, underscores, or hyphens."
+                "underscore, and contain only letters, digits, underscores, dots, or hyphens."
             )
         return v
 
@@ -60,7 +60,7 @@ class UserUpdate(BaseModel):
         if v is not None and not _USERNAME_REGEX.match(v):
             raise ValueError(
                 "Username must be 3–20 characters long, start with a letter or "
-                "underscore, and contain only letters, digits, underscores, or hyphens."
+                "underscore, and contain only letters, digits, underscores, dots, or hyphens."
             )
         return v
 
