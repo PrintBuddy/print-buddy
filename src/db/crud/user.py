@@ -2,7 +2,7 @@ import uuid
 from sqlmodel import Session, select
 
 from ..models.user import User
-from ...schemas.user import UserCreate, UserUpdate, UserChangePassword
+from ...schemas.user import UserCreate, UserUpdate
 from ...core.utils import round_money
 
 
@@ -110,6 +110,13 @@ class UserService:
         users = session.exec(stmt).all()
 
         return users
+
+    def get_usernames(
+        self,
+        session: Session
+    ) -> set[str]:
+        stmt = select(User.username)
+        return {username.casefold() for username in session.exec(stmt).all()}
     
     def get_admin_emails(self, session: Session) -> list[str]:
         stmt = select(User.email).where(User.is_admin == True, User.is_active == True)
@@ -226,5 +233,3 @@ class UserService:
         session.commit()
         return user
         
-
-

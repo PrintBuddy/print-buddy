@@ -26,7 +26,13 @@ class Security:
         Verifies if the plain password coincides with the hashed password.
         Returns True or False
         """
-        return checkpw(plain_pwd.encode(), hashed_pwd.encode())
+        try:
+            if not hashed_pwd:
+                return False
+            return checkpw(plain_pwd.encode(), hashed_pwd.encode())
+        except (ValueError, TypeError):
+            logger.warning("Stored password hash is missing or invalid")
+            return False
     
     @classmethod
     def create_token(cls, data: dict) -> str:

@@ -10,14 +10,16 @@ from ...db.crud.user import UserService
 from ...db.models.transaction import Transaction, TransactionType
 from ...db.models.refund_request import RefundRequest, RefundStatus
 from ...db.models.user import User
-from ...schemas.settings import RechargeInfoSchema, TelegramAdminRead, TelegramAdminCreate, ActivityLogEntry, TonerAlertConfig, ADConfigSchema
+from ...schemas.settings import RechargeInfoSchema, TelegramAdminRead, TelegramAdminCreate, ActivityLogEntry, TonerAlertConfig, ADConfigSchema, ADImportResultSchema, ADImportRequestSchema, ADImportPreviewSchema
 from ...core.mail_assistant import send_toner_alert_email
+from ...core.ldap_assistant import LDAPAssistant
 
 
 router = APIRouter()
 config_service = AppConfigService()
 ta_service = TelegramAdminService()
 user_service = UserService()
+ldap_assistant = LDAPAssistant()
 
 
 RECHARGE_KEY = "recharge_info"
@@ -54,6 +56,92 @@ def update_ad_config(
 ):
     config_service.set(AD_CONFIG_KEY, body.model_dump(), session)
     return body
+
+
+@router.post(
+    "/ad-config/preview-import-users",
+    response_model=ADImportPreviewSchema,
+    status_code=status.HTTP_200_OK
+)
+def preview_ad_import_users(
+    body: ADImportRequestSchema,
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    ad_config = config_service.get(AD_CONFIG_KEY, session)
+    if not ad_config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="AD config not found"
+        )
+
+    if not ad_config.get("enabled", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AD is disabled"
+        )
+
+    server = ad_config.get("server")
+    domain = ad_config.get("domain")
+    base_dn = ad_config.get("base_dn")
+    if not server or not domain or not base_dn:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AD config is incomplete"
+        )
+
+    ldap_assistant.configure(server, domain, base_dn)
+    result = ldap_assistant.preview_import_users(body.username, body.pwd, session)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid AD credentials or directory search not permitted for this AD account"
+        )
+
+    return ADImportPreviewSchema(**result)
+
+
+@router.post(
+    "/ad-config/import-users",
+    response_model=ADImportResultSchema,
+    status_code=status.HTTP_200_OK
+)
+def import_ad_users(
+    body: ADImportRequestSchema,
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    ad_config = config_service.get(AD_CONFIG_KEY, session)
+    if not ad_config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="AD config not found"
+        )
+
+    if not ad_config.get("enabled", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AD is disabled"
+        )
+
+    server = ad_config.get("server")
+    domain = ad_config.get("domain")
+    base_dn = ad_config.get("base_dn")
+    if not server or not domain or not base_dn:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AD config is incomplete"
+        )
+
+    ldap_assistant.configure(server, domain, base_dn)
+    result = ldap_assistant.import_users(body.username, body.pwd, session)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid AD credentials or directory search not permitted for this AD account"
+        )
+
+    return ADImportResultSchema(**result)
 
 
 # ─── Recharge Info ─────────────────────────────────────────────────────────────

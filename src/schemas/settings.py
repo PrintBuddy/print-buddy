@@ -60,3 +60,31 @@ class ADConfigSchema(BaseModel):
     server: str
     domain: str
     base_dn: str
+
+
+class ADImportResultSchema(BaseModel):
+    total_found: int
+    imported_count: int
+    skipped_count: int
+    skipped_invalid_count: int = 0
+    detail: str
+
+
+class ADImportRequestSchema(BaseModel):
+    username: str
+    pwd: str
+
+
+class ADImportCandidateSchema(BaseModel):
+    username: str
+    name: str
+    surname: str
+
+
+class ADImportPreviewSchema(BaseModel):
+    total_found: int
+    importable_count: int
+    skipped_count: int
+    skipped_invalid_count: int = 0
+    candidates: list[ADImportCandidateSchema]
+    detail: str
