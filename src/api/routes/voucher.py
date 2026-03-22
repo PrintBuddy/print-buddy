@@ -5,12 +5,16 @@ from ..dependencies.database import SessionDep
 
 from ...schemas.voucher import VoucherRead, RedeemSuccess
 from ...db.crud.voucher import VoucherService
+from ...db.crud.app_config import AppConfigService
 from ...core.voucher_assistant import VoucherAssistant
 
 
 router = APIRouter()
 voucher_assistant = VoucherAssistant()
 voucher_service = VoucherService()
+config_service = AppConfigService()
+VOUCHER_REDEEM_KEY = "voucher_redeem_config"
+VOUCHER_REDEEM_DEFAULT = {"enabled": True}
 
 
 @router.post(
@@ -41,6 +45,12 @@ def redeem_voucher(
     token: TokenDep,
     session: SessionDep
 ):
+    voucher_redeem_config = config_service.get(VOUCHER_REDEEM_KEY, session) or VOUCHER_REDEEM_DEFAULT
+    if not voucher_redeem_config.get("enabled", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Voucher redeem is currently disabled"
+        )
     
     user_id = token.credentials
     
