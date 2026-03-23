@@ -43,6 +43,10 @@ class TonerAlertConfig(BaseModel):
     interval_hours: int = 24  # hours between repeat notifications while toner is still low
 
 
+class VoucherRedeemConfig(BaseModel):
+    enabled: bool = True
+
+
 class ActivityLogEntry(BaseModel):
     id: str
     action: str  # "recharge" | "adjustment" | "refund_approved" | "refund_denied"
@@ -60,3 +64,31 @@ class ADConfigSchema(BaseModel):
     server: str
     domain: str
     base_dn: str
+
+
+class ADImportResultSchema(BaseModel):
+    total_found: int
+    imported_count: int
+    skipped_count: int
+    skipped_invalid_count: int = 0
+    detail: str
+
+
+class ADImportRequestSchema(BaseModel):
+    username: str
+    pwd: str
+
+
+class ADImportCandidateSchema(BaseModel):
+    username: str
+    name: str
+    surname: str
+
+
+class ADImportPreviewSchema(BaseModel):
+    total_found: int
+    importable_count: int
+    skipped_count: int
+    skipped_invalid_count: int = 0
+    candidates: list[ADImportCandidateSchema]
+    detail: str

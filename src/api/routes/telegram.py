@@ -55,6 +55,7 @@ def _serialize_recharge_request(request: RechargeRequest) -> dict:
         "user_id": request.user_id,
         "username": request.username,
         "amount": round_money(request.amount),
+        "message": request.message,
         "status": request.status,
         "requester_chat_id": request.requester_chat_id,
         "requester_telegram_username": request.requester_telegram_username,
@@ -220,6 +221,9 @@ def create_recharge_request(
     amount = round_money(request_data.amount)
     if amount <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be a positive number")
+
+    if request_data.message is not None:
+        request_data.message = request_data.message.strip() or None
 
     user = user_service.get_user_by_username(request_data.username, session)
     if user is None:

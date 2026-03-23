@@ -20,6 +20,7 @@ class RechargeRequest(SQLModel, table=True):
     user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE", nullable=False, index=True)
     username: str = Field(nullable=False)
     amount: float = Field(nullable=False)
+    message: str = Field(nullable=True, default=None)
     status: RechargeRequestStatus = Field(default=RechargeRequestStatus.PENDING, nullable=False)
     requester_chat_id: str = Field(nullable=False, index=True)
     requester_telegram_username: str = Field(nullable=True, default=None)
