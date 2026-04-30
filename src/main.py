@@ -29,7 +29,7 @@ app = FastAPI(
 
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=[settings.URL, "127.0.0.1", "localhost", "archimind", "*.local", "backend"]
+    allowed_hosts=[settings.URL, "127.0.0.1", "localhost", "10.0.10.3", "*.local", "backend"]
 )
 
 
