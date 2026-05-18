@@ -46,7 +46,7 @@ def upload_file(
     is_valid = fm.is_valid_format(file)
     if not is_valid:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="File format not supported"
         )
 
@@ -56,7 +56,7 @@ def upload_file(
 
     if size == -1:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"File size too large. Max size: {settings.MAX_FILE_SIZE_MB} MB"
         )
 
