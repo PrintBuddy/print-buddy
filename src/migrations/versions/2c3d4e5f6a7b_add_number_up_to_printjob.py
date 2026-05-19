@@ -1,7 +1,7 @@
 """add_number_up_to_printjob
 
 Revision ID: 2c3d4e5f6a7b
-Revises: fb56e562724a
+Revises: aa12bb34cc56
 Create Date: 2026-05-19 00:00:00.000000
 
 """
@@ -14,7 +14,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = '2c3d4e5f6a7b'
-down_revision: Union[str, Sequence[str], None] = 'fb56e562724a'
+down_revision: Union[str, Sequence[str], None] = 'aa12bb34cc56'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
