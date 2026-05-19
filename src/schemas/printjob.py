@@ -28,6 +28,7 @@ class PrintJobCreate(BaseModel):
             "file_name": self.file.filename,
             "file_size": self.file.size_bytes,
             "pages": self.pages,
+            "number_up": self.print_options.number_up,
             "two_sided": self.print_options.sides != SidesOption.ONE_SIDED,
             "color": self.print_options.color,
             "cost": self.cost
@@ -39,6 +40,7 @@ class PrintJobRead(BaseModel):
     printer_name: str
     file_name: str
     pages: int
+    number_up: int
     two_sided: bool
     color: bool
     cost: float
