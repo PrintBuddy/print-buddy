@@ -1,5 +1,6 @@
 from fastapi import APIRouter, status, HTTPException
 import uuid
+import math
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
@@ -102,7 +103,10 @@ def print_file(
             detail="Invalid format of page-ranges"
         )
 
-    total_price = round_money(pages * print_options.copies * price_per_page)
+    # Calculate effective pages accounting for n-up (pages per sheet)
+    # e.g., 4 pages with 2-up = 2 physical sheets
+    effective_pages = math.ceil(pages / print_options.number_up)
+    total_price = round_money(effective_pages * print_options.copies * price_per_page)
 
     # VERIFY ENOUGH USER CREDITS
     enough_credits = print_assistant.check_enough_credit(user_id, total_price, session)
@@ -120,7 +124,7 @@ def print_file(
         file=file,
         print_options=print_options,
         cost=total_price,
-        pages=pages * print_options.copies
+        pages=effective_pages * print_options.copies
     )
 
     pj = print_assistant.send_print_job(
