@@ -1,10 +1,11 @@
 from fastapi import UploadFile
 from pathlib import Path
-from PyPDF2 import PdfReader
+from PyPDF2 import PdfReader, PdfWriter
 import shutil
 
 from .utils import generate_time
 from .config import settings
+from .logger import logger
 
 
 class FileManager:
@@ -57,7 +58,32 @@ class FileManager:
                     return -1
                 buffer.write(chunk)
 
+        # If it's a PDF, decrypt it so CUPS can print it correctly
+        if path.suffix.lower() == ".pdf":
+            try:
+                self._decrypt_pdf(path)
+            except Exception as e:
+                logger.warning(f"Failed to decrypt PDF {path.name}: {e}")
+                # File is still saved even if decryption fails
+
         return total_bytes
+    
+    def _decrypt_pdf(self, path: Path) -> None:
+        """
+        Decrypt an encrypted PDF and save the unencrypted version back to disk.
+        This prevents CUPS from receiving encrypted bytes that would print as gibberish.
+        """
+        reader = PdfReader(path.as_posix())
+        writer = PdfWriter()
+
+        # Copy all pages from reader to writer
+        # PyPDF2 automatically decrypts pages as they're read
+        for page in reader.pages:
+            writer.add_page(page)
+
+        # Write the decrypted PDF back to the same path
+        with open(path, "wb") as f:
+            writer.write(f)
     
     def get_total_pages(self, path: Path) -> int:
         ext = path.suffix.lower()
