@@ -119,7 +119,12 @@ class PrintAssistant:
     ):
         printer_name = printjob.printer.name
         filepath = printjob.file.filepath
-        print_options = printjob.print_options
+        print_options = dict(printjob.print_options.cups_options)
+
+        # Explicitly set the document format so CUPS selects the proper filter
+        # chain and does not treat PDF bytes as plain/raw text on some queues.
+        if printjob.file.mime_type:
+            print_options["document-format"] = printjob.file.mime_type
 
         username = user_service.get_username_by_id(printjob.user_id, session)
 
@@ -127,7 +132,7 @@ class PrintAssistant:
             printer_name=printer_name,
             file_path=filepath,
             title=f"{username} job in {printer_name}",
-            options=print_options.cups_options
+            options=print_options
         )
 
         if not cups_id:
