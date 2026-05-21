@@ -1,7 +1,9 @@
 from fastapi import UploadFile
 from pathlib import Path
-from PyPDF2 import PdfReader, PdfWriter
+from PyPDF2 import PdfReader
 import shutil
+import subprocess
+import tempfile
 
 from .utils import generate_time
 from .config import settings
@@ -70,20 +72,53 @@ class FileManager:
     
     def _decrypt_pdf(self, path: Path) -> None:
         """
-        Decrypt an encrypted PDF and save the unencrypted version back to disk.
-        This prevents CUPS from receiving encrypted bytes that would print as gibberish.
+        Decrypt an encrypted PDF using Ghostscript and save the unencrypted version.
+        Ghostscript is more robust than PyPDF2 for PDF processing and produces CUPS-compatible output.
         """
-        reader = PdfReader(path.as_posix())
-        writer = PdfWriter()
-
-        # Copy all pages from reader to writer
-        # PyPDF2 automatically decrypts pages as they're read
-        for page in reader.pages:
-            writer.add_page(page)
-
-        # Write the decrypted PDF back to the same path
-        with open(path, "wb") as f:
-            writer.write(f)
+        try:
+            # Use Ghostscript to convert PDF, which automatically decrypts it
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp_path = tmp.name
+            
+            # Run ghostscript to decrypt
+            subprocess.run([
+                "gs",
+                "-q",
+                "-dNOPAUSE",
+                "-dBATCH",
+                "-dSAFER",
+                "-sDEVICE=pdfwrite",
+                "-dEncryptionR=0",
+                f"-sOutputFile={tmp_path}",
+                str(path)
+            ], check=True, capture_output=True, timeout=30)
+            
+            # Replace original with decrypted version
+            shutil.move(tmp_path, str(path))
+        except subprocess.CalledProcessError as e:
+            # If ghostscript fails, try fallback with PyPDF2
+            self._decrypt_pdf_fallback(path)
+        except Exception as e:
+            logger.warning(f"Ghostscript decryption failed for {path.name}, trying fallback: {e}")
+            self._decrypt_pdf_fallback(path)
+    
+    def _decrypt_pdf_fallback(self, path: Path) -> None:
+        """
+        Fallback PDF decryption using PyPDF2 if Ghostscript fails.
+        """
+        from PyPDF2 import PdfWriter
+        
+        try:
+            reader = PdfReader(path.as_posix())
+            writer = PdfWriter()
+            
+            for page in reader.pages:
+                writer.add_page(page)
+            
+            with open(path, "wb") as f:
+                writer.write(f)
+        except Exception as e:
+            logger.error(f"Both decryption methods failed for {path.name}: {e}")
     
     def get_total_pages(self, path: Path) -> int:
         ext = path.suffix.lower()
