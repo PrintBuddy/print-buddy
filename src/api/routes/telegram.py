@@ -1,6 +1,7 @@
+import hmac
 import uuid
 
-from fastapi import APIRouter, status, HTTPException
+from fastapi import APIRouter, Depends, Header, status, HTTPException
 from fastapi.responses import JSONResponse
 from sqlmodel import select
 
@@ -28,9 +29,24 @@ from ...db.crud.telegram_admin import TelegramAdminService
 from ...db.crud.recharge_request import RechargeRequestService
 from ...db.models.recharge_request import RechargeRequest, RechargeRequestStatus
 from ...core.utils import round_money
+from ...core.config import settings
 
 
-router = APIRouter()
+def verify_telegram_secret(x_telegram_secret: str | None = Header(default=None)) -> None:
+    """
+    Router-level gate: every route below acts on behalf of the bot, so every
+    request must carry the shared secret the bot and backend both hold —
+    without this, `_require_telegram_admin` only checks a client-supplied
+    chat_id, which anyone reaching this API directly could forge.
+    """
+    if not x_telegram_secret or not hmac.compare_digest(x_telegram_secret, settings.TELEGRAM_SECRET):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Missing or invalid Telegram secret"
+        )
+
+
+router = APIRouter(dependencies=[Depends(verify_telegram_secret)])
 voucher_assistant = VoucherAssistant()
 user_service = UserService()
 tx_service = TransactionService()

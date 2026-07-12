@@ -28,11 +28,18 @@ class TokenBearer(HTTPBearer):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Unauthorized access"
             )
-        
+
+        uid = token.get("uid")
+        if uid is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized access"
+            )
+
         if creds is not None:
             return HTTPAuthorizationCredentials(
-                scheme=creds.scheme, 
-                credentials=token['uid']
+                scheme=creds.scheme,
+                credentials=uid
             )
     
 

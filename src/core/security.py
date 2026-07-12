@@ -71,8 +71,12 @@ class Security:
                 algorithms=[settings.ALGORITHM]
             )
 
+            if "uid" not in payload:
+                logger.warning("Token payload is missing the 'uid' claim")
+                return None
+
             return payload
-        
+
         except JWTError as e:
             logger.warning("Received an invalid or expired token")
             return None

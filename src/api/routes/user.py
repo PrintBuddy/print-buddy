@@ -48,7 +48,7 @@ def get_me(
 @router.patch(
     '/me',
     response_model=UserRead,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_200_OK
 )
 def update_me(
     user_data: UserUpdate,
@@ -204,7 +204,7 @@ def get_user_by_id(
 @router.patch(
     '/{id}',
     response_model=UserAdminRead,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_200_OK
 )
 def update_user(
     id: str,

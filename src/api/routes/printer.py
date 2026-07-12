@@ -101,9 +101,10 @@ def get_printer_toner(
 )
 def get_printer_by_name(
     name: str,
+    token: TokenDep,
     session: SessionDep
 ):
-    
+
     printer = printer_service.get_printer_by_name(name, session)
     if printer is None:
         raise HTTPException(
@@ -117,7 +118,7 @@ def get_printer_by_name(
 @router.patch(
     '/{name}',
     response_model=PrinterRead,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_200_OK
 )
 def update_printer(
     name: str,
