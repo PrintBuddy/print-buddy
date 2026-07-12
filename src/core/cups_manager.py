@@ -317,3 +317,9 @@ class CUPSManager:
         cups_state = attrs["job-state"]
 
         return self.JOB_STATE_MAP[cups_state]
+
+
+# Single shared instance — every caller in the app talks to the same CUPS
+# connection, lock, and error-retry/marker-cache state instead of each
+# maintaining its own.
+cups_manager = CUPSManager()

@@ -148,24 +148,37 @@ def adjust_balance(
 
     balance = round_money(user.balance)
     diff = round_money(amount - balance)
-    if diff >= 0:
-        user_service.add_credit(user_id, diff, session)
-    else:
-        user_service.discount_credit(user_id, -diff, session)
 
-    balance = user_service.get_user_balance(user_id, session)
+    result = user_service.adjust_balance(
+        user_id, diff, session, enforce_credit_limit=True
+    )
+    if not result.ok:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_404_NOT_FOUND if result.reason == "not_found"
+                else status.HTTP_409_CONFLICT
+            ),
+            detail=(
+                "User not found" if result.reason == "not_found"
+                else "Adjustment would exceed the user's credit limit"
+            ),
+        )
+
     admin = user_service.get_username_by_id(admin_id, session)
 
     tx_data = TransactionCreate(
         user_id=user.id,
         type=TransactionType.ADJUSTMENT,
         amount=diff,
-        balance_after=balance,  # type: ignore
+        balance_after=result.new_balance,  # type: ignore
         note=f"Adjusted by {admin}"
     )
 
     tx_service.create_transaction(tx_data, session)
 
+    # `user` was loaded before the atomic update above; its in-memory
+    # balance is stale, and this response serializes it.
+    user.balance = result.new_balance  # type: ignore
     return user
 
 
@@ -186,21 +199,22 @@ def recharge_user(
     user_id = str(user.id)
     amount = round_money(recharge_info.amount)
 
-    success = user_service.add_credit(user_id, amount, session)
-    if not success:
+    result = user_service.adjust_balance(
+        user_id, amount, session, enforce_credit_limit=False
+    )
+    if not result.ok:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Unable to recharge user"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
         )
-    
-    balance = user_service.get_user_balance(user_id, session)
+
     admin = user_service.get_username_by_id(admin_id, session)
 
     tx_data = TransactionCreate(
         user_id=user.id,
         type=TransactionType.RECHARGE,
         amount=amount,
-        balance_after=balance,  # type: ignore
+        balance_after=result.new_balance,  # type: ignore
         note=f"Recharge made by {admin}"
     )
 
@@ -283,12 +297,18 @@ def resolve_recharge_request(
         )
 
     if resolve_data.action == RechargeRequestAction.APPROVE:
-        user.balance = round_money(user.balance + request.amount)
+        result = user_service.adjust_balance(
+            str(user.id), request.amount, session, enforce_credit_limit=False
+        )
+        if not result.ok:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+            )
         tx_data = TransactionCreate(
             user_id=user.id,
             type=TransactionType.RECHARGE,
             amount=request.amount,
-            balance_after=user.balance,
+            balance_after=result.new_balance,
             note=f"Recharge request approved by {admin_username}"
         )
         session.add(Transaction(**tx_data.model_dump()))
@@ -297,7 +317,6 @@ def resolve_recharge_request(
         request.status = RechargeRequestStatus.REJECTED
 
     request.resolved_by_username = admin_username
-    session.add(user)
     session.add(request)
     session.commit()
     session.refresh(request)

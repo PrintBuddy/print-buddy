@@ -1,4 +1,5 @@
 from ldap3 import Server, Connection, ALL, core
+from ldap3.utils.conv import escape_filter_chars
 from pydantic import ValidationError
 from sqlmodel import Session
 
@@ -145,7 +146,7 @@ class LDAPAssistant:
 
 
     def _authenticate_with_ldap(self, username: str, pwd: str):
-        ad_user = f'{username}@{self.domain}' 
+        ad_user = f'{escape_filter_chars(username)}@{self.domain}'
         try:
             server = Server(self.server_url, get_info=ALL)
             conn = Connection(server, user=ad_user, password=pwd, auto_bind=True)
@@ -165,7 +166,7 @@ class LDAPAssistant:
         return conn
         
     def _search_user_in_ldap(self, conn: Connection, username: str):
-        search_filter = f'(sAMAccountName={username})' 
+        search_filter = f'(sAMAccountName={escape_filter_chars(username)})'
         attributes_to_fetch = ['givenName', 'sn']
 
         logger.info(f"Searching for user '{username}' details in LDAP...")

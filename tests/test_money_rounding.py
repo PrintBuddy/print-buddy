@@ -29,15 +29,14 @@ class MoneyRoundingTests(unittest.TestCase):
             session.commit()
             session.refresh(user)
 
-            user_service.discount_credit(user.id, 0.04, session)
+            result = user_service.adjust_balance(str(user.id), -0.04, session)
 
-            session.refresh(user)
-
-            self.assertEqual(user.balance, 0.06)
+            self.assertTrue(result.ok)
+            self.assertEqual(result.new_balance, 0.06)
             self.assertEqual(user_service.get_user_balance(user.id, session), 0.06)
 
-    def test_credit_check_uses_rounded_money_values(self):
-        print_assistant = PrintAssistant()
+    def test_debit_within_credit_limit_succeeds_at_boundary(self):
+        user_service = UserService()
 
         with Session(self.engine) as session:
             user = User(
@@ -58,7 +57,33 @@ class MoneyRoundingTests(unittest.TestCase):
             session.add(user)
             session.commit()
 
-            self.assertTrue(print_assistant.check_enough_credit(user.id, 0.06, session))
+            # Debiting exactly down to the (rounded) available balance
+            # should succeed rather than being rejected by float drift.
+            result = user_service.adjust_balance(str(user.id), -0.06, session)
+            self.assertTrue(result.ok)
+            self.assertEqual(result.new_balance, 0.0)
+
+    def test_debit_past_credit_limit_is_rejected(self):
+        user_service = UserService()
+
+        with Session(self.engine) as session:
+            user = User(
+                username="limited_user",
+                name="Limited",
+                surname="User",
+                pwd="secret",
+                email="limited@example.com",
+                balance=0.0,
+                credit_limit=0.0,
+            )
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+
+            result = user_service.adjust_balance(str(user.id), -0.01, session)
+            self.assertFalse(result.ok)
+            self.assertEqual(result.reason, "insufficient_funds")
+            self.assertEqual(user_service.get_user_balance(user.id, session), 0.0)
 
 
 if __name__ == "__main__":

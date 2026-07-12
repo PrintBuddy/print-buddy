@@ -26,10 +26,15 @@ class FileManager:
     
     def generate_file_path(self, dirpath: Path, file: UploadFile):
         dirpath.mkdir(parents=True, exist_ok=True)
-        
+
         if file.filename is None:
             ext = self.extensions[file.content_type]  # type: ignore
             file.filename = f"file_{generate_time().strftime('%Y%m%d_%H%M%S')}.{ext}"
+        else:
+            # Strip any directory components the client-supplied filename
+            # might carry (e.g. "../../etc/x") before it's ever joined
+            # onto a real path.
+            file.filename = Path(file.filename).name
 
         path = dirpath / file.filename
 

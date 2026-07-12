@@ -155,23 +155,33 @@ def resolve_refund(
         )
 
     admin_username = user_service.get_username_by_id(admin_id, session)
-    updated = refund_service.update_refund_request(refund_id, data, session, resolved_by_username=admin_username)
 
-    # If approved, credit the user with the print job cost
+    # If approved, credit the user *before* the request is marked resolved —
+    # a failed credit should not leave a refund marked approved with no
+    # money actually moved.
+    tx_data = None
     if data.status == RefundStatus.APPROVED:
         job = pj_service.get_job_by_id(str(refund.print_job_id), session)
         if job is not None:
-            user_service.add_credit(str(refund.user_id), job.cost, session)
-
-            balance = user_service.get_user_balance(str(refund.user_id), session)
-
+            result = user_service.adjust_balance(
+                str(refund.user_id), job.cost, session, enforce_credit_limit=False
+            )
+            if not result.ok:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found"
+                )
             tx_data = TransactionCreate(
                 user_id=refund.user_id,
                 type=TransactionType.REFUND,
                 amount=job.cost,
-                balance_after=balance,  # type: ignore
+                balance_after=result.new_balance,  # type: ignore
                 note=f"Refund approved by {admin_username} for job {job.file_name}"
             )
-            tx_service.create_transaction(tx_data, session)
+
+    updated = refund_service.update_refund_request(refund_id, data, session, resolved_by_username=admin_username)
+
+    if tx_data is not None:
+        tx_service.create_transaction(tx_data, session)
 
     return updated

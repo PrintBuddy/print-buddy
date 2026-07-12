@@ -1,8 +1,8 @@
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from backend.src.core.ldap_assistant import LDAPAssistant
-from backend.src.core.security import Security
-from backend.src.db.models.user import User
+from src.core.ldap_assistant import LDAPAssistant
+from src.core.security import Security
+from src.db.models.user import User
 
 
 class TestLDAPImport:

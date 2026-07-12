@@ -1,9 +1,19 @@
 import uuid
+from dataclasses import dataclass
+from typing import Literal
 from sqlmodel import Session, select
+from sqlalchemy import update
 
 from ..models.user import User
 from ...schemas.user import UserCreate, UserUpdate
 from ...core.utils import round_money
+
+
+@dataclass
+class BalanceUpdateResult:
+    ok: bool
+    reason: Literal["not_found", "insufficient_funds"] | None
+    new_balance: float | None
 
 
 class UserService:
@@ -180,8 +190,9 @@ class UserService:
         new_pwd: str,
         session: Session
     ):
-        
-        stmt = select(User).where(User.id == user_id)
+
+        uid = uuid.UUID(user_id) if not isinstance(user_id, uuid.UUID) else user_id
+        stmt = select(User).where(User.id == uid)
         user = session.exec(stmt).first()
         if user is None:
             return False
@@ -192,29 +203,45 @@ class UserService:
         return True
 
     
-    def discount_credit(self, user_id: str, cost: float, session: Session):
-        stmt = select(User).where(User.id == user_id)
-        user = session.exec(stmt).first()
+    def adjust_balance(
+        self,
+        user_id: str,
+        delta: float,
+        session: Session,
+        *,
+        enforce_credit_limit: bool = True,
+    ) -> BalanceUpdateResult:
+        """
+        Atomically applies `delta` (positive or negative) to a user's balance
+        in a single UPDATE ... RETURNING statement, so concurrent callers
+        against the same row serialize at the database level instead of
+        racing on a read-then-write.
+        """
+        delta = round_money(delta)
+        uid = uuid.UUID(user_id) if not isinstance(user_id, uuid.UUID) else user_id
 
-        if user is None:
-            return False
-        
-        user.balance = round_money(user.balance - cost)
+        # A small epsilon absorbs float64 representation noise in the
+        # stored balance/credit_limit columns (pre-existing values were
+        # each individually rounded to cents, but their *sum* can carry a
+        # sub-cent binary-float error) — money is only ever meaningful to
+        # the cent, so this never masks a genuine shortfall.
+        stmt = update(User).where(User.id == uid)
+        if enforce_credit_limit:
+            stmt = stmt.where(User.balance + User.credit_limit + delta >= -0.005)
+        stmt = stmt.values(balance=User.balance + delta).returning(User.balance)
+
+        row = session.execute(stmt).first()
+
+        if row is None:
+            exists = session.exec(select(User.id).where(User.id == uid)).first()
+            session.commit()
+            reason: Literal["not_found", "insufficient_funds"] = (
+                "not_found" if exists is None else "insufficient_funds"
+            )
+            return BalanceUpdateResult(False, reason, None)
+
         session.commit()
-
-        return True
-    
-    def add_credit(self, user_id: str, amount: float, session: Session):
-        stmt = select(User).where(User.id == user_id)
-        user = session.exec(stmt).first()
-
-        if user is None:
-            return False
-        
-        user.balance = round_money(user.balance + amount)
-        session.commit()
-
-        return True
+        return BalanceUpdateResult(True, None, round_money(row[0]))
     
     ######################## DELETE ##########################
 

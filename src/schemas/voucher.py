@@ -1,10 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import uuid
 
 
 class VoucherCreate(BaseModel):
     code: str
-    amount: float
+    amount: float = Field(..., gt=0)
     created_by_id: uuid.UUID
     created_by_name: str
 

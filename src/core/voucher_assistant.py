@@ -119,12 +119,14 @@ class VoucherAssistant:
             )
         
         amount = round_money(voucher.amount)
-        success = user_service.add_credit(user_id, amount, session)
-        
-        if not success:
+        result = user_service.adjust_balance(
+            user_id, amount, session, enforce_credit_limit=False
+        )
+
+        if not result.ok:
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Unable to recharge user balance, try again"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
             )
         
         voucher_data = VoucherRedeem(
