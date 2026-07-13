@@ -1,4 +1,4 @@
-from pydantic import computed_field, field_validator
+from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_core import MultiHostUrl
 
@@ -16,16 +16,16 @@ class Settings(BaseSettings):
 
     # Comma-separated list of allowed frontend origins for CORS, e.g.
     # "https://printbuddy.example.com,https://admin.printbuddy.example.com".
-    # Defaults to Vite's local dev server so local development keeps working
-    # without an explicit .env entry.
-    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    # Kept as a plain str (not list[str]): pydantic-settings tries to
+    # JSON-decode any list-typed env var before field validators ever run,
+    # which would reject a plain comma-separated string outright. Split via
+    # CORS_ORIGINS_LIST below instead.
+    CORS_ORIGINS: str = "http://localhost:5173"
 
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def _split_cors_origins(cls, v):
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+    @computed_field()
+    @property
+    def CORS_ORIGINS_LIST(self) -> list[str]:
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     SECRET_KEY: str
     ALGORITHM: str
