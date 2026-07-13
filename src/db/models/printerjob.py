@@ -1,4 +1,5 @@
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, Column
+from sqlalchemy import Numeric
 from enum import Enum
 from datetime import datetime
 import uuid
@@ -38,13 +39,13 @@ class PrintJob(SQLModel, table=True):
 
     cups_id: str = Field(nullable=False)
 
-    user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE")
+    user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE", index=True)
 
-    printer_id: uuid.UUID = Field(foreign_key="printer.id", ondelete="CASCADE")
+    printer_id: uuid.UUID = Field(foreign_key="printer.id", ondelete="CASCADE", index=True)
 
     printer_name: str = Field(nullable=False)
 
-    file_id: uuid.UUID = Field(foreign_key="file.id", ondelete="SET NULL", nullable=True)
+    file_id: uuid.UUID = Field(foreign_key="file.id", ondelete="SET NULL", nullable=True, index=True)
 
     file_name: str = Field(nullable=True)
 
@@ -63,7 +64,10 @@ class PrintJob(SQLModel, table=True):
         nullable=False
     )
 
-    cost: float = Field(nullable=False, default=0.0)
+    cost: float = Field(
+        default=0.0,
+        sa_column=Column(Numeric(10, 2, asdecimal=False), nullable=False)
+    )
 
     created_at: datetime = Field(
         default_factory=generate_time,

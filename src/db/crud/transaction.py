@@ -26,16 +26,29 @@ class TransactionService:
     def get_transactions_from_user(
         self,
         user_id: str,
-        session: Session
+        session: Session,
+        limit: int = 50,
+        offset: int = 0
     ):
-        stmt = select(Transaction).where(
-            Transaction.user_id == user_id
-        ).order_by(Transaction.created_at.desc())  # type: ignore
+        stmt = (
+            select(Transaction)
+            .where(Transaction.user_id == user_id)
+            .order_by(Transaction.created_at.desc())  # type: ignore
+            .limit(limit)
+            .offset(offset)
+        )
         return list(session.exec(stmt).all())
 
     def get_all_transactions(
         self,
-        session: Session
+        session: Session,
+        limit: int = 50,
+        offset: int = 0
     ):
-        stmt = select(Transaction).order_by(Transaction.created_at.desc())  # type: ignore
+        stmt = (
+            select(Transaction)
+            .order_by(Transaction.created_at.desc())  # type: ignore
+            .limit(limit)
+            .offset(offset)
+        )
         return list(session.exec(stmt).all())

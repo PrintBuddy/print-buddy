@@ -2,11 +2,10 @@ from fastapi import APIRouter, status, HTTPException
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
+from ..dependencies.pagination import PaginationDep
 
 from ...db.crud.transaction import TransactionService
-from ...db.models.transaction import TransactionType
-from ...schemas.transaction import TransactionRead, TransactionCreate
-from ...schemas.settings import VoucherRedeemConfig
+from ...schemas.transaction import TransactionRead
 
 from ...db.crud.user import UserService
 from ...db.crud.app_config import AppConfigService
@@ -16,8 +15,6 @@ router = APIRouter()
 tx_service = TransactionService()
 user_service = UserService()
 config_service = AppConfigService()
-VOUCHER_REDEEM_KEY = "voucher_redeem_config"
-VOUCHER_REDEEM_DEFAULT = {"enabled": True}
 
 
 @router.get(
@@ -27,11 +24,12 @@ VOUCHER_REDEEM_DEFAULT = {"enabled": True}
 )
 def get_my_transactions(
     token: TokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     user_id = token.credentials
 
-    tx_s = tx_service.get_transactions_from_user(user_id, session)
+    tx_s = tx_service.get_transactions_from_user(user_id, session, pagination.limit, pagination.offset)
 
     return tx_s
 
@@ -51,26 +49,14 @@ def get_recharge_info(
 
 
 @router.get(
-    "/voucher-redeem",
-    response_model=VoucherRedeemConfig,
-    status_code=status.HTTP_200_OK
-)
-def get_voucher_redeem_config(
-    token: TokenDep,
-    session: SessionDep
-):
-    data = config_service.get(VOUCHER_REDEEM_KEY, session)
-    return data or VOUCHER_REDEEM_DEFAULT
-
-
-@router.get(
     "/all",
     response_model=list[TransactionRead],
     status_code=status.HTTP_200_OK
 )
 def get_all_transactions(
     token: AdminTokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     """Get all transactions across all users (admin only)."""
-    return tx_service.get_all_transactions(session)
+    return tx_service.get_all_transactions(session, pagination.limit, pagination.offset)

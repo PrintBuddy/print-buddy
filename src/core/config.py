@@ -14,6 +14,19 @@ class Settings(BaseSettings):
     ENVIRONMENT: str
     URL: str
 
+    # Comma-separated list of allowed frontend origins for CORS, e.g.
+    # "https://printbuddy.example.com,https://admin.printbuddy.example.com".
+    # Kept as a plain str (not list[str]): pydantic-settings tries to
+    # JSON-decode any list-typed env var before field validators ever run,
+    # which would reject a plain comma-separated string outright. Split via
+    # CORS_ORIGINS_LIST below instead.
+    CORS_ORIGINS: str = "http://localhost:5173"
+
+    @computed_field()
+    @property
+    def CORS_ORIGINS_LIST(self) -> list[str]:
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXP_MIN: int
@@ -31,8 +44,6 @@ class Settings(BaseSettings):
     UPLOAD_PATH: str
 
     PRINTER_MARKERS_DB: str
-
-    EXP_TIME_VOUCHER_MIN: int
 
     TELEGRAM_SECRET: str
 
@@ -52,7 +63,7 @@ class Settings(BaseSettings):
     @computed_field()
     @property
     def DB_URL(self) -> str:
-        url =  MultiHostUrl.build(
+        url = MultiHostUrl.build(
             scheme=self.DB_SCHEME,
             host=self.DB_HOSTNAME,
             username=self.DB_USER,
@@ -63,4 +74,4 @@ class Settings(BaseSettings):
         return str(url)
 
 
-settings = Settings() # type: ignore
+settings = Settings()  # type: ignore

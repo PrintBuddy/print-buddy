@@ -20,9 +20,9 @@ class RefundRequest(SQLModel, table=True):
         primary_key=True
     )
 
-    user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE", nullable=False)
+    user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE", nullable=False, index=True)
 
-    print_job_id: uuid.UUID = Field(foreign_key="printjob.id", ondelete="CASCADE", nullable=False)
+    print_job_id: uuid.UUID = Field(foreign_key="printjob.id", ondelete="CASCADE", nullable=False, index=True)
 
     message: str = Field(nullable=True, default=None)
 

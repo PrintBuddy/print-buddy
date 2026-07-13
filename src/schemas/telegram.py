@@ -2,19 +2,18 @@ from datetime import datetime
 from enum import Enum
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TelegramID(BaseModel):
     chat_id: str
 
 
-class GenerateVoucher(TelegramID):
-    amount: float
-
-
 class UserBalance(TelegramID):
     username: str
+    # Reused by both /recharge (must be > 0) and /balance-adjust (an
+    # absolute target, legitimately 0) — left unconstrained here;
+    # adjust_balance's own atomic update guards the outcome either way.
     amount: float
 
 
@@ -31,7 +30,7 @@ class RechargeRequestAction(str, Enum):
 
 class TelegramRechargeRequestCreate(TelegramID):
     username: str
-    amount: float
+    amount: float = Field(..., gt=0)
     message: str | None = None
     telegram_username: str | None = None
     telegram_first_name: str | None = None

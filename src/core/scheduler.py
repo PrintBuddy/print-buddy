@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .cups_manager import CUPSManager
+from .cups_manager import cups_manager as cups_mgr
 from ..db.main import engine
 
 from ..db.crud.printer import PrinterService
@@ -37,8 +37,6 @@ tx_service = TransactionService()
 file_service = FileService()
 config_service = AppConfigService()
 fm = FileManager()
-
-cups_mgr = CUPSManager()
 
 
 class Scheduler(AsyncIOScheduler):
@@ -134,15 +132,22 @@ class Scheduler(AsyncIOScheduler):
                 if status != new_status:
                     job = pj_service.update_job_status(str(job_id), new_status, session)
                     if job is not None and new_status in ERROR_STATUS:
-                        user_service.add_credit(str(job.user_id), job.cost, session)
-
-                        balance = user_service.get_user_balance(str(job.user_id), session)
+                        result = user_service.adjust_balance(
+                            str(job.user_id), job.cost, session,
+                            enforce_credit_limit=False,
+                        )
+                        if not result.ok:
+                            logger.error(
+                                f"SCHEDULER: Failed to refund user {job.user_id} "
+                                f"for job {job.id} ({result.reason})"
+                            )
+                            continue
 
                         tx_data = TransactionCreate(
                             user_id=job.user_id,
                             type=TransactionType.REFUND,
                             amount=job.cost,
-                            balance_after=balance,  # type: ignore
+                            balance_after=result.new_balance,  # type: ignore
                             note=f"Refunded from file print: {job.file_name}"
                         )
 

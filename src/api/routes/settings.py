@@ -3,6 +3,7 @@ from sqlmodel import select
 
 from ..dependencies.token import AdminTokenDep
 from ..dependencies.database import SessionDep
+from ..dependencies.pagination import PaginationDep
 
 from ...db.crud.app_config import AppConfigService
 from ...db.crud.telegram_admin import TelegramAdminService
@@ -10,7 +11,7 @@ from ...db.crud.user import UserService
 from ...db.models.transaction import Transaction, TransactionType
 from ...db.models.refund_request import RefundRequest, RefundStatus
 from ...db.models.user import User
-from ...schemas.settings import RechargeInfoSchema, TelegramAdminRead, TelegramAdminCreate, ActivityLogEntry, TonerAlertConfig, VoucherRedeemConfig, ADConfigSchema, ADImportResultSchema, ADImportRequestSchema, ADImportPreviewSchema
+from ...schemas.settings import RechargeInfoSchema, TelegramAdminRead, TelegramAdminCreate, ActivityLogEntry, TonerAlertConfig, ADConfigSchema, ADImportResultSchema, ADImportRequestSchema, ADImportPreviewSchema
 from ...core.mail_assistant import send_toner_alert_email
 from ...core.ldap_assistant import LDAPAssistant
 
@@ -25,8 +26,6 @@ ldap_assistant = LDAPAssistant()
 RECHARGE_KEY = "recharge_info"
 TONER_ALERT_KEY = "toner_alert_config"
 TONER_ALERT_DEFAULT = {"enabled": False, "interval_hours": 24}
-VOUCHER_REDEEM_KEY = "voucher_redeem_config"
-VOUCHER_REDEEM_DEFAULT = {"enabled": True}
 AD_CONFIG_KEY = "ad_config"
 AD_CONFIG_DEFAULT = {"enabled": False, "institution_name": "", "server": "", "domain": "", "base_dn": ""}
 
@@ -207,35 +206,6 @@ def update_toner_alert_config(
     return body
 
 
-# ─── Voucher Redeem Config ─────────────────────────────────────────────────────
-
-@router.get(
-    "/voucher-redeem",
-    response_model=VoucherRedeemConfig,
-    status_code=status.HTTP_200_OK
-)
-def get_voucher_redeem_config(
-    token: AdminTokenDep,
-    session: SessionDep
-):
-    data = config_service.get(VOUCHER_REDEEM_KEY, session)
-    return VoucherRedeemConfig(**(data or VOUCHER_REDEEM_DEFAULT))
-
-
-@router.put(
-    "/voucher-redeem",
-    response_model=VoucherRedeemConfig,
-    status_code=status.HTTP_200_OK
-)
-def update_voucher_redeem_config(
-    body: VoucherRedeemConfig,
-    token: AdminTokenDep,
-    session: SessionDep
-):
-    config_service.set(VOUCHER_REDEEM_KEY, body.model_dump(), session)
-    return body
-
-
 @router.post(
     "/toner-alert/test",
     status_code=status.HTTP_200_OK
@@ -282,9 +252,10 @@ async def test_toner_alert(
 )
 def list_telegram_admins(
     token: AdminTokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
-    admins = ta_service.get_all(session)
+    admins = ta_service.get_all(session, pagination.limit, pagination.offset)
     result = []
     for ta in admins:
         user = user_service.get_user_by_id(str(ta.user_id), session)
@@ -354,10 +325,17 @@ def remove_telegram_admin(
 )
 def get_activity_log(
     token: AdminTokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     """Merged, chronological log of all admin-initiated recharges/adjustments and refund resolutions."""
     entries: list[ActivityLogEntry] = []
+
+    # Each source is independently ordered newest-first, so taking the top
+    # (offset + limit) from each is enough to guarantee the true top
+    # (offset + limit) of the merged, re-sorted result — a standard
+    # k-way-merge bound — without scanning either table in full.
+    fetch_cap = pagination.offset + pagination.limit
 
     # ── Admin-initiated transactions (RECHARGE + ADJUSTMENT) ──────────────────
     admin_tx_types = (TransactionType.RECHARGE, TransactionType.ADJUSTMENT)
@@ -368,6 +346,7 @@ def get_activity_log(
         .where(Transaction.note.isnot(None))           # type: ignore
         .where(Transaction.note != "")                 # type: ignore
         .order_by(Transaction.created_at.desc())       # type: ignore
+        .limit(fetch_cap)
     )
     for tx, target_user in session.exec(tx_stmt).all():
         # Parse "Recharge made by admin" or "Adjusted by admin"
@@ -390,6 +369,7 @@ def get_activity_log(
         .join(User, RefundRequest.user_id == User.id)  # type: ignore
         .where(RefundRequest.status != RefundStatus.PENDING)
         .order_by(RefundRequest.updated_at.desc())  # type: ignore
+        .limit(fetch_cap)
     )
     for refund, target_user in session.exec(ref_stmt).all():
         action = (
@@ -407,6 +387,6 @@ def get_activity_log(
             created_at=refund.updated_at,
         ))
 
-    # Sort all entries newest-first
+    # Sort all entries newest-first, then apply the actual page window
     entries.sort(key=lambda e: e.created_at, reverse=True)
-    return entries
+    return entries[pagination.offset:pagination.offset + pagination.limit]

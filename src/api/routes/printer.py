@@ -6,12 +6,11 @@ from ..dependencies.token import TokenDep, AdminTokenDep
 from ...db.crud.printer import PrinterService
 from ...db.crud.group import GroupService
 from ...schemas.printer import PrinterRead, PrinterCreate, PrinterAdminUpdate, TonerMarker
-from ...core.cups_manager import CUPSManager
+from ...core.cups_manager import cups_manager
 
 
 printer_service = PrinterService()
 group_service = GroupService()
-cups_manager = CUPSManager()
 
 router = APIRouter()
 
@@ -102,9 +101,10 @@ def get_printer_toner(
 )
 def get_printer_by_name(
     name: str,
+    token: TokenDep,
     session: SessionDep
 ):
-    
+
     printer = printer_service.get_printer_by_name(name, session)
     if printer is None:
         raise HTTPException(
@@ -118,7 +118,7 @@ def get_printer_by_name(
 @router.patch(
     '/{name}',
     response_model=PrinterRead,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_200_OK
 )
 def update_printer(
     name: str,

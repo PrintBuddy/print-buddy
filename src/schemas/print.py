@@ -1,7 +1,5 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field
 from enum import Enum
-
-from ..core.utils import is_valid_page_range
 
 
 class SidesOption(str, Enum):
@@ -11,13 +9,13 @@ class SidesOption(str, Enum):
 
 
 class PrintOptions(BaseModel):
-    copies: int = 1
+    copies: int = Field(1, ge=1)
     media: str = "A4"
     sides: SidesOption = SidesOption.ONE_SIDED
     fit_to_page: bool = True
     color: bool = False
     page_ranges: str = "all"
-    number_up: int = 1 
+    number_up: int = Field(1, ge=1)
 
     @property
     def cups_options(self) -> dict:

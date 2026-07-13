@@ -33,17 +33,12 @@ app.add_middleware(
 )
 
 
-origins = [
-    "*"
-]
-
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,        
+    allow_origins=settings.CORS_ORIGINS_LIST,
     allow_credentials=True,
-    allow_methods=["*"],          
-    allow_headers=["*"],          
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -53,7 +48,7 @@ async def db_error_handler(request: Request, call_next):
     try:
         return await call_next(request)
     except (OperationalError, InterfaceError) as e:
-        logger.error("Database connection error")
+        logger.error(f"Database connection error: {e}")
 
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

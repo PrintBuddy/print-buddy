@@ -4,6 +4,7 @@ import uuid
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
+from ..dependencies.pagination import PaginationDep
 
 from ...schemas.user import UserRead, UserUpdate, UserAdminRead, UserEmailRequest, UserChangePassword, UserAdminUpdate
 from ...db.crud.user import UserService
@@ -48,7 +49,7 @@ def get_me(
 @router.patch(
     '/me',
     response_model=UserRead,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_200_OK
 )
 def update_me(
     user_data: UserUpdate,
@@ -173,10 +174,11 @@ def update_my_email(
 )
 def get_users(
     token: AdminTokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
-    
-    users = user_service.get_users(session)
+
+    users = user_service.get_users(session, pagination.limit, pagination.offset)
     return users
 
 
@@ -204,7 +206,7 @@ def get_user_by_id(
 @router.patch(
     '/{id}',
     response_model=UserAdminRead,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_200_OK
 )
 def update_user(
     id: str,
@@ -269,15 +271,21 @@ def recharge_user_balance(
             detail="User not found"
         )
 
-    user_service.add_credit(user_id, amount, session)
-    balance = user_service.get_user_balance(user_id, session)
+    result = user_service.adjust_balance(
+        user_id, amount, session, enforce_credit_limit=False
+    )
+    if not result.ok:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
     admin = user_service.get_username_by_id(admin_id, session)
 
     tx_data = TransactionCreate(
         user_id=uuid.UUID(user_id),
         type=TransactionType.RECHARGE,
         amount=amount,
-        balance_after=balance,  # type: ignore
+        balance_after=result.new_balance,  # type: ignore
         note=f"Recharge by {admin}"
     )
     tx_service.create_transaction(tx_data, session)
@@ -307,19 +315,28 @@ def adjust_user_balance(
     target_balance = round_money(amount)
     balance = round_money(user.balance)
     diff = round_money(target_balance - balance)
-    if diff >= 0:
-        user_service.add_credit(user_id, diff, session)
-    else:
-        user_service.discount_credit(user_id, -diff, session)
 
-    balance = user_service.get_user_balance(user_id, session)
+    result = user_service.adjust_balance(
+        user_id, diff, session, enforce_credit_limit=True
+    )
+    if not result.ok:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_404_NOT_FOUND if result.reason == "not_found"
+                else status.HTTP_409_CONFLICT
+            ),
+            detail=(
+                "User not found" if result.reason == "not_found"
+                else "Adjustment would exceed the user's credit limit"
+            ),
+        )
     admin = user_service.get_username_by_id(admin_id, session)
 
     tx_data = TransactionCreate(
         user_id=uuid.UUID(user_id),
         type=TransactionType.ADJUSTMENT,
         amount=diff,
-        balance_after=balance,  # type: ignore
+        balance_after=result.new_balance,  # type: ignore
         note=f"Balance adjustment by {admin}"
     )
 
@@ -360,7 +377,8 @@ def delete_user(
 def get_user_transactions(
     id: str,
     token: AdminTokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     """Get all transactions for a specific user (admin only)."""
     user = user_service.get_user_by_id(id, session)
@@ -369,4 +387,4 @@ def get_user_transactions(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    return tx_service.get_transactions_from_user(id, session)
+    return tx_service.get_transactions_from_user(id, session, pagination.limit, pagination.offset)

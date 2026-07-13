@@ -13,7 +13,7 @@ from ..db.models.transaction import TransactionType
 from ..schemas.printjob import PrintJobCreate
 from ..schemas.transaction import TransactionCreate
 
-from .cups_manager import CUPSManager
+from .cups_manager import cups_manager as cups_mgr
 
 from .logger import logger
 from .utils import round_money
@@ -24,9 +24,6 @@ printer_service = PrinterService()
 file_service = FileService()
 pj_service = PrintJobService()
 tx_service = TransactionService()
-
-cups_mgr = CUPSManager()
-
 
 class PrintAssistant:
 
@@ -71,47 +68,6 @@ class PrintAssistant:
         
         return printer
     
-    def check_enough_credit(
-        self, 
-        user_id: str,
-        cost: float,
-        session: Session
-    ):
-        
-        user_balance = user_service.get_user_balance(user_id, session)
-        if user_balance is None:
-            logger.error(f"User {user_id} not found")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        user_credit_limit = user_service.get_user_credit_limit(user_id, session)
-        if user_credit_limit is None:
-            logger.error(f"User {user_id} not found")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-
-        available_credit = round_money(user_balance + user_credit_limit)
-        required_credit = round_money(cost)
-
-        return available_credit >= required_credit
-    
-    def discount_credit(
-        self,
-        user_id: str,
-        cost: float,
-        session: Session
-    ):
-        
-        success = user_service.discount_credit(user_id, cost, session)
-        if not success:
-            logger.error(f"An error occurred while discounting credit from user {user_id}")
-
-        return success
-      
     def send_print_job(
         self,
         printjob: PrintJobCreate,
@@ -123,6 +79,27 @@ class PrintAssistant:
 
         username = user_service.get_username_by_id(printjob.user_id, session)
 
+        # Reserve funds atomically before sending anything to CUPS, so an
+        # unpayable job never reaches the printer. Refunded below if the
+        # CUPS send itself then fails.
+        debit = user_service.adjust_balance(
+            printjob.user_id,
+            -printjob.cost,
+            session,
+            enforce_credit_limit=True,
+        )
+        if not debit.ok:
+            if debit.reason == "not_found":
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found"
+                )
+            logger.error(f"User {printjob.user_id} has insufficient balance to print")
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="Insufficient balance to print"
+            )
+
         cups_id = cups_mgr.print_file(
             printer_name=printer_name,
             file_path=filepath,
@@ -132,6 +109,12 @@ class PrintAssistant:
 
         if not cups_id:
             logger.error(f"Unable to send printjob of file {printjob.file.filename} to CUPS")
+            user_service.adjust_balance(
+                printjob.user_id,
+                printjob.cost,
+                session,
+                enforce_credit_limit=False,
+            )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Unable to send print job to CUPS service"
@@ -139,26 +122,18 @@ class PrintAssistant:
 
         # UPDATE TONER LEVELS
         cups_mgr.get_toner_levels(printer_name)
-    
+
         pj = pj_service.create_job(
             cups_id=cups_id,
             printjob=printjob,
             session=session
         )
 
-        self.discount_credit(
-            printjob.user_id,
-            printjob.cost,
-            session
-        )
-
-        balance = user_service.get_user_balance(printjob.user_id, session)
-
         tx_data = TransactionCreate(
             user_id=uuid.UUID(printjob.user_id),
             type=TransactionType.PRINT,
             amount=-round_money(printjob.cost),
-            balance_after=balance,  # type: ignore
+            balance_after=debit.new_balance,  # type: ignore
             note=f"Printed file: {pj.file_name}"
         )
 

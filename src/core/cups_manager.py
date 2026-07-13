@@ -81,10 +81,10 @@ class MarkerCache:
 
 class CUPSManager:
     def __init__(self):
-        try: 
+        try:
             self.conn = cups.Connection()
-        except:
-            logger.error("Failed to connect to CUPS")
+        except Exception as e:
+            logger.error(f"Failed to connect to CUPS: {e}")
             self.conn = None
 
         # pycups / libcups is not thread-safe: serialise all calls.
@@ -144,7 +144,7 @@ class CUPSManager:
         self,
         printer_name: str,
         file_path: str,
-        title:str,
+        title: str,
         options: dict
     ) -> str:
         
@@ -303,8 +303,9 @@ class CUPSManager:
             with self._lock:
                 attrs = self.conn.getJobAttributes(cups_id)
         except cups.IPPError as e:
-            
-            if not cups_id in self.jobs_with_error:
+            logger.warning(f"Failed to get CUPS job attributes for job {cups_id}: {e}")
+
+            if cups_id not in self.jobs_with_error:
                 self.jobs_with_error[cups_id] = 0
             self.jobs_with_error[cups_id] += 1
 
@@ -317,3 +318,9 @@ class CUPSManager:
         cups_state = attrs["job-state"]
 
         return self.JOB_STATE_MAP[cups_state]
+
+
+# Single shared instance — every caller in the app talks to the same CUPS
+# connection, lock, and error-retry/marker-cache state instead of each
+# maintaining its own.
+cups_manager = CUPSManager()

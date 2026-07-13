@@ -1,4 +1,3 @@
-import subprocess
 from sqlmodel import Session, select
 from ..db.main import engine
 from .scheduler import scheduler

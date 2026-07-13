@@ -4,6 +4,7 @@ import math
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
+from ..dependencies.pagination import PaginationDep
 
 from ...schemas.print import PrintOptions
 from ...schemas.printjob import PrintJobCreate, PrintJobRead, PrintJobAdminRead
@@ -30,10 +31,11 @@ group_service = GroupService()
 )
 def get_my_jobs(
     token: TokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     user_id = token.credentials
-    jobs = pj_service.get_jobs_by_id(user_id, session)
+    jobs = pj_service.get_jobs_by_id(user_id, session, pagination.limit, pagination.offset)
     return jobs
 
 
@@ -108,16 +110,9 @@ def print_file(
     effective_pages = math.ceil(pages / print_options.number_up)
     total_price = round_money(effective_pages * print_options.copies * price_per_page)
 
-    # VERIFY ENOUGH USER CREDITS
-    enough_credits = print_assistant.check_enough_credit(user_id, total_price, session)
-    if not enough_credits:
-        logger.error(f"User {user_id} has insufficient balance to print")
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="Insufficient balance to print"
-        )
-
-    # SEND JOB AND DISCOUNT IF JOB SENT
+    # SEND JOB — send_print_job atomically debits credit before sending to
+    # CUPS and raises 402/404 itself if the debit fails, so no separate
+    # pre-check is done here (that would just reopen the race it closes).
     pj_create = PrintJobCreate(
         user_id=user_id,
         printer=printer,
@@ -142,7 +137,8 @@ def print_file(
 )
 def get_all_jobs(
     token: AdminTokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     """Get all print jobs across all users (admin only)."""
-    return pj_service.get_all_jobs(session)
+    return pj_service.get_all_jobs(session, pagination.limit, pagination.offset)

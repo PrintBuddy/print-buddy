@@ -15,7 +15,7 @@ class FileManager:
         self.max_sz = settings.MAX_FILE_SIZE_MB * 1024 * 1024
 
         self.extensions = {
-            "application/pdf" : "pdf",
+            "application/pdf": "pdf",
             "image/png": "png",
             "image/jpeg": "jpeg"
         }
@@ -26,10 +26,15 @@ class FileManager:
     
     def generate_file_path(self, dirpath: Path, file: UploadFile):
         dirpath.mkdir(parents=True, exist_ok=True)
-        
+
         if file.filename is None:
             ext = self.extensions[file.content_type]  # type: ignore
             file.filename = f"file_{generate_time().strftime('%Y%m%d_%H%M%S')}.{ext}"
+        else:
+            # Strip any directory components the client-supplied filename
+            # might carry (e.g. "../../etc/x") before it's ever joined
+            # onto a real path.
+            file.filename = Path(file.filename).name
 
         path = dirpath / file.filename
 
@@ -75,11 +80,12 @@ class FileManager:
         Decrypt an encrypted PDF using Ghostscript and save the unencrypted version.
         Ghostscript is more robust than PyPDF2 for PDF processing and produces CUPS-compatible output.
         """
+        tmp_path = None
         try:
             # Use Ghostscript to convert PDF, which automatically decrypts it
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
                 tmp_path = tmp.name
-            
+
             # Run ghostscript to decrypt
             subprocess.run([
                 "gs",
@@ -92,15 +98,19 @@ class FileManager:
                 f"-sOutputFile={tmp_path}",
                 str(path)
             ], check=True, capture_output=True, timeout=30)
-            
+
             # Replace original with decrypted version
             shutil.move(tmp_path, str(path))
+            tmp_path = None  # moved, not ours to clean up anymore
         except subprocess.CalledProcessError as e:
-            # If ghostscript fails, try fallback with PyPDF2
+            logger.warning(f"Ghostscript decryption failed for {path.name}, trying fallback: {e}")
             self._decrypt_pdf_fallback(path)
         except Exception as e:
             logger.warning(f"Ghostscript decryption failed for {path.name}, trying fallback: {e}")
             self._decrypt_pdf_fallback(path)
+        finally:
+            if tmp_path is not None:
+                Path(tmp_path).unlink(missing_ok=True)
     
     def _decrypt_pdf_fallback(self, path: Path) -> None:
         """
@@ -134,6 +144,7 @@ class FileManager:
             path.unlink(missing_ok=True)
             return True
         except Exception as e:
+            logger.warning(f"Failed to delete file {path.name}: {e}")
             return False
         
     def delete_directory(self, path: Path) -> bool:

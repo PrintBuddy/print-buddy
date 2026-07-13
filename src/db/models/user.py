@@ -1,5 +1,6 @@
 from datetime import datetime
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, Column
+from sqlalchemy import Numeric
 from pydantic import EmailStr
 import uuid
 
@@ -39,9 +40,15 @@ class User(SQLModel, table=True):
 
     is_admin: bool = Field(default=False)
 
-    balance: float = Field(nullable=False, default=0.0)
+    balance: float = Field(
+        default=0.0,
+        sa_column=Column(Numeric(10, 2, asdecimal=False), nullable=False)
+    )
 
-    credit_limit: float = Field(nullable=False, default=0.0)
+    credit_limit: float = Field(
+        default=0.0,
+        sa_column=Column(Numeric(10, 2, asdecimal=False), nullable=False)
+    )
 
     email_to_set: bool = Field(default=False)
 

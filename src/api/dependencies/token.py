@@ -1,5 +1,4 @@
 from fastapi.security import HTTPBearer
-from fastapi.exceptions import HTTPException
 from fastapi import status, HTTPException
 from fastapi.security.http import HTTPAuthorizationCredentials
 from fastapi import Request, Depends
@@ -28,11 +27,18 @@ class TokenBearer(HTTPBearer):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Unauthorized access"
             )
-        
+
+        uid = token.get("uid")
+        if uid is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized access"
+            )
+
         if creds is not None:
             return HTTPAuthorizationCredentials(
-                scheme=creds.scheme, 
-                credentials=token['uid']
+                scheme=creds.scheme,
+                credentials=uid
             )
     
 
