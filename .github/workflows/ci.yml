@@ -24,6 +24,41 @@ jobs:
       - name: Lint
         run: flake8 src
 
+      - name: Create dummy .env for tests
+        # Settings() is instantiated at import time (src/core/config.py),
+        # so it needs every required field populated even for tests that
+        # never touch config directly. Values are all placeholders — no
+        # test hits a real database, mail server, or Telegram/CUPS.
+        run: |
+          cat > .env <<'EOF'
+          PROJECT_NAME=PrintBuddy
+          VERSION=0.0.0-test
+          ENVIRONMENT=test
+          URL=http://localhost
+          CORS_ORIGINS=http://localhost:5173
+          SECRET_KEY=test-secret-key
+          ALGORITHM=HS256
+          ACCESS_TOKEN_EXP_MIN=60
+          PWD_RESET_SALT=test-salt
+          PWD_RESET_URL=http://localhost/password-reset
+          PWD_RESET_TIME_MIN=30
+          DB_SCHEME=postgresql+psycopg
+          DB_HOSTNAME=localhost
+          DB_USER=test
+          DB_PASSWORD=test
+          DB_NAME=test
+          MAX_FILE_SIZE_MB=50
+          UPLOAD_PATH=/tmp/uploads
+          PRINTER_MARKERS_DB=/tmp/printer_markers.db
+          TELEGRAM_SECRET=test-telegram-secret
+          MAIL_USERNAME=test
+          MAIL_PASSWORD=test
+          MAIL_FROM=test@example.com
+          MAIL_PORT=587
+          MAIL_SERVER=localhost
+          MAIL_FROM_NAME=PrintBuddy
+          EOF
+
       - name: Test
         run: pytest -v
 
