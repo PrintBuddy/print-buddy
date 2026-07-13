@@ -1,4 +1,5 @@
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, Column
+from sqlalchemy import Numeric
 from datetime import datetime
 from enum import Enum
 import uuid
@@ -19,15 +20,19 @@ class Transaction(SQLModel, table=True):
         primary_key=True
     )
 
-    user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE")
+    user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE", index=True)
 
     type: TransactionType = Field(
         nullable=False
     )
 
-    amount: float = Field(nullable=False)
+    amount: float = Field(
+        sa_column=Column(Numeric(10, 2, asdecimal=False), nullable=False)
+    )
 
-    balance_after: float = Field(nullable=False)
+    balance_after: float = Field(
+        sa_column=Column(Numeric(10, 2, asdecimal=False), nullable=False)
+    )
 
     note: str = Field(nullable=True)
 

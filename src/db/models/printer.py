@@ -1,5 +1,5 @@
 from sqlmodel import SQLModel, Field, Column
-from sqlalchemy import JSON
+from sqlalchemy import JSON, Numeric
 from datetime import datetime
 import uuid
 from enum import Enum
@@ -28,11 +28,17 @@ class Printer(SQLModel, table=True):
         default=PrinterStatus.IDLE
     )
 
-    price_per_page_bw: float = Field(nullable=False, default=0.0)
+    price_per_page_bw: float = Field(
+        default=0.0,
+        sa_column=Column(Numeric(10, 2, asdecimal=False), nullable=False)
+    )
 
     admits_color: bool = Field(default=False, nullable=False)
 
-    price_per_page_color: float = Field(default=0.0)
+    price_per_page_color: float = Field(
+        default=0.0,
+        sa_column=Column(Numeric(10, 2, asdecimal=False), nullable=False)
+    )
 
     state_reasons: list[str] = Field(
         default=[],
