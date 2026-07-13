@@ -9,6 +9,7 @@ from ...schemas.file import FileCreate, FileRead
 from ...db.crud.file import FileService
 from ...core.config import settings
 from ...core.file_manager import FileManager
+from ...core.logger import logger
 
 
 file_service = FileService()
@@ -104,6 +105,7 @@ def delete_file(
     
     path = Path(file.filepath)
     success = fm.delete_file(path)
-    print(success)
+    if not success:
+        logger.warning(f"Failed to delete file from disk: {path}")
 
     return file

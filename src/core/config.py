@@ -53,7 +53,10 @@ class Settings(BaseSettings):
     MAIL_PORT: int
     MAIL_SERVER: str
     MAIL_FROM_NAME: str
-    
+
+    # Optional: error tracking. Left unset in dev/CI/test, where Sentry stays inactive.
+    SENTRY_DSN: str | None = None
+
     @computed_field()
     @property
     def DB_PATH(self) -> str:
