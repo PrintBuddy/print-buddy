@@ -8,7 +8,6 @@ from sqlmodel import select
 from ..dependencies.database import SessionDep
 
 from ...schemas.telegram import (
-    GenerateVoucher,
     RechargeRequestAction,
     TelegramID,
     TelegramRechargeRequestCreate,
@@ -16,9 +15,7 @@ from ...schemas.telegram import (
     TelegramRechargeRequestResult,
     UserBalance,
 )
-from ...schemas.voucher import VoucherRead
 from ...schemas.user import UserRead, UserAdminRead
-from ...core.voucher_assistant import VoucherAssistant
 from ...db.crud.user import UserService
 
 from ...schemas.transaction import TransactionCreate
@@ -47,7 +44,6 @@ def verify_telegram_secret(x_telegram_secret: str | None = Header(default=None))
 
 
 router = APIRouter(dependencies=[Depends(verify_telegram_secret)])
-voucher_assistant = VoucherAssistant()
 user_service = UserService()
 tx_service = TransactionService()
 ta_service = TelegramAdminService()
@@ -130,18 +126,6 @@ def get_me(
     return user
 
 
-@router.post(
-    "/generate-voucher",
-    status_code=status.HTTP_200_OK,
-    response_model=VoucherRead
-)
-def generate_voucher(
-    voucher_data: GenerateVoucher,
-    session: SessionDep
-):
-    admin_id = _require_telegram_admin(voucher_data.chat_id, session)
-    voucher = voucher_assistant.generate_voucher(admin_id, voucher_data.amount, session)
-    return voucher
 
 
 @router.patch(

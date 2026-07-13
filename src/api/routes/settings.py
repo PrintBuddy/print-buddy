@@ -10,7 +10,7 @@ from ...db.crud.user import UserService
 from ...db.models.transaction import Transaction, TransactionType
 from ...db.models.refund_request import RefundRequest, RefundStatus
 from ...db.models.user import User
-from ...schemas.settings import RechargeInfoSchema, TelegramAdminRead, TelegramAdminCreate, ActivityLogEntry, TonerAlertConfig, VoucherRedeemConfig, ADConfigSchema, ADImportResultSchema, ADImportRequestSchema, ADImportPreviewSchema
+from ...schemas.settings import RechargeInfoSchema, TelegramAdminRead, TelegramAdminCreate, ActivityLogEntry, TonerAlertConfig, ADConfigSchema, ADImportResultSchema, ADImportRequestSchema, ADImportPreviewSchema
 from ...core.mail_assistant import send_toner_alert_email
 from ...core.ldap_assistant import LDAPAssistant
 
@@ -25,8 +25,6 @@ ldap_assistant = LDAPAssistant()
 RECHARGE_KEY = "recharge_info"
 TONER_ALERT_KEY = "toner_alert_config"
 TONER_ALERT_DEFAULT = {"enabled": False, "interval_hours": 24}
-VOUCHER_REDEEM_KEY = "voucher_redeem_config"
-VOUCHER_REDEEM_DEFAULT = {"enabled": True}
 AD_CONFIG_KEY = "ad_config"
 AD_CONFIG_DEFAULT = {"enabled": False, "institution_name": "", "server": "", "domain": "", "base_dn": ""}
 
@@ -204,35 +202,6 @@ def update_toner_alert_config(
     session: SessionDep
 ):
     config_service.set(TONER_ALERT_KEY, body.model_dump(), session)
-    return body
-
-
-# ─── Voucher Redeem Config ─────────────────────────────────────────────────────
-
-@router.get(
-    "/voucher-redeem",
-    response_model=VoucherRedeemConfig,
-    status_code=status.HTTP_200_OK
-)
-def get_voucher_redeem_config(
-    token: AdminTokenDep,
-    session: SessionDep
-):
-    data = config_service.get(VOUCHER_REDEEM_KEY, session)
-    return VoucherRedeemConfig(**(data or VOUCHER_REDEEM_DEFAULT))
-
-
-@router.put(
-    "/voucher-redeem",
-    response_model=VoucherRedeemConfig,
-    status_code=status.HTTP_200_OK
-)
-def update_voucher_redeem_config(
-    body: VoucherRedeemConfig,
-    token: AdminTokenDep,
-    session: SessionDep
-):
-    config_service.set(VOUCHER_REDEEM_KEY, body.model_dump(), session)
     return body
 
 

@@ -9,10 +9,6 @@ class TelegramID(BaseModel):
     chat_id: str
 
 
-class GenerateVoucher(TelegramID):
-    amount: float = Field(..., gt=0)
-
-
 class UserBalance(TelegramID):
     username: str
     # Reused by both /recharge (must be > 0) and /balance-adjust (an

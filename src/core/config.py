@@ -45,8 +45,6 @@ class Settings(BaseSettings):
 
     PRINTER_MARKERS_DB: str
 
-    EXP_TIME_VOUCHER_MIN: int
-
     TELEGRAM_SECRET: str
 
     MAIL_USERNAME: str

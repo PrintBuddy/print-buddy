@@ -1,7 +1,7 @@
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 
-from .routes import auth, user, printer, file, print, voucher, transaction, telegram, refund, stats, group
+from .routes import auth, user, printer, file, print, transaction, telegram, refund, stats, group
 from .routes import settings as settings_routes
 
 from ..core.logger import logger
@@ -82,7 +82,6 @@ router.include_router(user.router, prefix="/users", tags=["users"])
 router.include_router(printer.router, prefix="/printers", tags=["printers"])
 router.include_router(file.router, prefix="/files", tags=["files"])
 router.include_router(print.router, prefix="/print", tags=["print"])
-router.include_router(voucher.router, prefix="/vouchers", tags=["vouchers"])
 router.include_router(transaction.router, prefix="/transactions", tags=["transactions"])
 router.include_router(telegram.router, prefix="/telegram", tags=["telegram"])
 router.include_router(refund.router, prefix="/refunds", tags=["refunds"])

@@ -43,10 +43,6 @@ class TonerAlertConfig(BaseModel):
     interval_hours: int = 24  # hours between repeat notifications while toner is still low
 
 
-class VoucherRedeemConfig(BaseModel):
-    enabled: bool = True
-
-
 class ActivityLogEntry(BaseModel):
     id: str
     action: str  # "recharge" | "adjustment" | "refund_approved" | "refund_denied"
