@@ -2,6 +2,7 @@ from fastapi import APIRouter, status, HTTPException
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
+from ..dependencies.pagination import PaginationDep
 
 from ...db.crud.transaction import TransactionService
 from ...db.models.transaction import TransactionType
@@ -24,11 +25,12 @@ config_service = AppConfigService()
 )
 def get_my_transactions(
     token: TokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     user_id = token.credentials
 
-    tx_s = tx_service.get_transactions_from_user(user_id, session)
+    tx_s = tx_service.get_transactions_from_user(user_id, session, pagination.limit, pagination.offset)
 
     return tx_s
 
@@ -54,7 +56,8 @@ def get_recharge_info(
 )
 def get_all_transactions(
     token: AdminTokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     """Get all transactions across all users (admin only)."""
-    return tx_service.get_all_transactions(session)
+    return tx_service.get_all_transactions(session, pagination.limit, pagination.offset)

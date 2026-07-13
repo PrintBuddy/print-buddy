@@ -2,6 +2,7 @@ from fastapi import APIRouter, status, HTTPException
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
+from ..dependencies.pagination import PaginationDep
 
 from ...db.crud.refund_request import RefundRequestService
 from ...db.crud.printjob import PrintJobService
@@ -85,11 +86,12 @@ def request_refund(
 )
 def get_my_refunds(
     token: TokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     """Get all refund requests made by the current user."""
     user_id = token.credentials
-    return refund_service.get_refunds_by_user(user_id, session)
+    return refund_service.get_refunds_by_user(user_id, session, pagination.limit, pagination.offset)
 
 
 # ─── Admin endpoints ──────────────────────────────────────────────────────────
@@ -101,10 +103,11 @@ def get_my_refunds(
 )
 def get_all_refunds(
     token: AdminTokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     """Get all refund requests (admin only)."""
-    return refund_service.get_all_refunds(session)
+    return refund_service.get_all_refunds(session, pagination.limit, pagination.offset)
 
 
 @router.get(
@@ -114,10 +117,11 @@ def get_all_refunds(
 )
 def get_pending_refunds(
     token: AdminTokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     """Get all pending refund requests (admin only)."""
-    return refund_service.get_pending_refunds(session)
+    return refund_service.get_pending_refunds(session, pagination.limit, pagination.offset)
 
 
 @router.patch(

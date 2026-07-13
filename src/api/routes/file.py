@@ -3,6 +3,7 @@ from pathlib import Path
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
+from ..dependencies.pagination import PaginationDep
 
 from ...schemas.file import FileCreate, FileRead
 from ...db.crud.file import FileService
@@ -24,10 +25,11 @@ router = APIRouter()
 )
 def get_files(
     token: TokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     user_id = token.credentials
-    files = file_service.get_files_by_user_id(user_id, session)
+    files = file_service.get_files_by_user_id(user_id, session, pagination.limit, pagination.offset)
     return files
 
 

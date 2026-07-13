@@ -53,9 +53,17 @@ class FileService:
     def get_files_by_user_id(
         self,
         id: str,
-        session: Session
+        session: Session,
+        limit: int = 50,
+        offset: int = 0
     ):
-        stmt = select(File).where(File.user_id == id)
+        stmt = (
+            select(File)
+            .where(File.user_id == id)
+            .order_by(File.uploaded_at.desc())  # type: ignore
+            .limit(limit)
+            .offset(offset)
+        )
         files = session.exec(stmt).all()
 
         return files

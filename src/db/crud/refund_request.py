@@ -47,25 +47,46 @@ class RefundRequestService:
     def get_refunds_by_user(
         self,
         user_id: str,
-        session: Session
+        session: Session,
+        limit: int = 50,
+        offset: int = 0
     ) -> list[RefundRequest]:
-        stmt = select(RefundRequest).where(RefundRequest.user_id == uuid.UUID(user_id))
+        stmt = (
+            select(RefundRequest)
+            .where(RefundRequest.user_id == uuid.UUID(user_id))
+            .order_by(RefundRequest.created_at.desc())  # type: ignore
+            .limit(limit)
+            .offset(offset)
+        )
         return list(session.exec(stmt).all())
 
     def get_all_refunds(
         self,
-        session: Session
+        session: Session,
+        limit: int = 50,
+        offset: int = 0
     ) -> list[RefundRequest]:
-        stmt = select(RefundRequest).order_by(RefundRequest.created_at.desc())  # type: ignore
+        stmt = (
+            select(RefundRequest)
+            .order_by(RefundRequest.created_at.desc())  # type: ignore
+            .limit(limit)
+            .offset(offset)
+        )
         return list(session.exec(stmt).all())
 
     def get_pending_refunds(
         self,
-        session: Session
+        session: Session,
+        limit: int = 50,
+        offset: int = 0
     ) -> list[RefundRequest]:
-        stmt = select(RefundRequest).where(
-            RefundRequest.status == RefundStatus.PENDING
-        ).order_by(RefundRequest.created_at.asc())  # type: ignore
+        stmt = (
+            select(RefundRequest)
+            .where(RefundRequest.status == RefundStatus.PENDING)
+            .order_by(RefundRequest.created_at.asc())  # type: ignore
+            .limit(limit)
+            .offset(offset)
+        )
         return list(session.exec(stmt).all())
 
     ########################## UPDATE #########################

@@ -4,6 +4,7 @@ import uuid
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
+from ..dependencies.pagination import PaginationDep
 
 from ...schemas.user import UserRead, UserUpdate, UserAdminRead, UserEmailRequest, UserChangePassword, UserAdminUpdate
 from ...db.crud.user import UserService
@@ -173,10 +174,11 @@ def update_my_email(
 )
 def get_users(
     token: AdminTokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
-    
-    users = user_service.get_users(session)
+
+    users = user_service.get_users(session, pagination.limit, pagination.offset)
     return users
 
 
@@ -375,7 +377,8 @@ def delete_user(
 def get_user_transactions(
     id: str,
     token: AdminTokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     """Get all transactions for a specific user (admin only)."""
     user = user_service.get_user_by_id(id, session)
@@ -384,4 +387,4 @@ def get_user_transactions(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    return tx_service.get_transactions_from_user(id, session)
+    return tx_service.get_transactions_from_user(id, session, pagination.limit, pagination.offset)

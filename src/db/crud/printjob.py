@@ -37,9 +37,17 @@ class PrintJobService:
     def get_jobs_by_id(
         self,
         user_id: str,
-        session: Session
+        session: Session,
+        limit: int = 50,
+        offset: int = 0
     ):
-        stmt = select(PrintJob).where(PrintJob.user_id == user_id)
+        stmt = (
+            select(PrintJob)
+            .where(PrintJob.user_id == user_id)
+            .order_by(PrintJob.created_at.desc())  # type: ignore
+            .limit(limit)
+            .offset(offset)
+        )
         jobs = session.exec(stmt).all()
 
         return jobs
@@ -54,9 +62,16 @@ class PrintJobService:
 
     def get_all_jobs(
         self,
-        session: Session
+        session: Session,
+        limit: int = 50,
+        offset: int = 0
     ) -> list[PrintJob]:
-        stmt = select(PrintJob).order_by(PrintJob.created_at.desc())  # type: ignore
+        stmt = (
+            select(PrintJob)
+            .order_by(PrintJob.created_at.desc())  # type: ignore
+            .limit(limit)
+            .offset(offset)
+        )
         return list(session.exec(stmt).all())
 
     def get_transitory_status_jobs(

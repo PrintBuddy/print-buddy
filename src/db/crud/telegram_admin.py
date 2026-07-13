@@ -39,9 +39,16 @@ class TelegramAdminService:
     
     def get_all(
         self,
-        session: Session
+        session: Session,
+        limit: int = 50,
+        offset: int = 0
     ):
-        stmt = select(TelegramAdmin)
+        stmt = (
+            select(TelegramAdmin)
+            .order_by(TelegramAdmin.created_at.desc())  # type: ignore
+            .limit(limit)
+            .offset(offset)
+        )
         return session.exec(stmt).all()
 
     def get_all_chat_ids(

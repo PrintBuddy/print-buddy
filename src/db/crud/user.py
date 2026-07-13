@@ -114,9 +114,16 @@ class UserService:
     
     def get_users(
         self,
-        session: Session
+        session: Session,
+        limit: int = 50,
+        offset: int = 0
     ):
-        stmt = select(User)
+        stmt = (
+            select(User)
+            .order_by(User.created_at.desc())  # type: ignore
+            .limit(limit)
+            .offset(offset)
+        )
         users = session.exec(stmt).all()
 
         return users

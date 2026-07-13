@@ -4,6 +4,7 @@ import math
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
+from ..dependencies.pagination import PaginationDep
 
 from ...schemas.print import PrintOptions
 from ...schemas.printjob import PrintJobCreate, PrintJobRead, PrintJobAdminRead
@@ -30,10 +31,11 @@ group_service = GroupService()
 )
 def get_my_jobs(
     token: TokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     user_id = token.credentials
-    jobs = pj_service.get_jobs_by_id(user_id, session)
+    jobs = pj_service.get_jobs_by_id(user_id, session, pagination.limit, pagination.offset)
     return jobs
 
 
@@ -135,7 +137,8 @@ def print_file(
 )
 def get_all_jobs(
     token: AdminTokenDep,
-    session: SessionDep
+    session: SessionDep,
+    pagination: PaginationDep
 ):
     """Get all print jobs across all users (admin only)."""
-    return pj_service.get_all_jobs(session)
+    return pj_service.get_all_jobs(session, pagination.limit, pagination.offset)
