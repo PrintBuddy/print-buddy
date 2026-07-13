@@ -1,7 +1,7 @@
 from fastapi import APIRouter, status, HTTPException, UploadFile
 from pathlib import Path
 
-from ..dependencies.token import TokenDep, AdminTokenDep
+from ..dependencies.token import TokenDep
 from ..dependencies.database import SessionDep
 from ..dependencies.pagination import PaginationDep
 

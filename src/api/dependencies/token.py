@@ -1,5 +1,4 @@
 from fastapi.security import HTTPBearer
-from fastapi.exceptions import HTTPException
 from fastapi import status, HTTPException
 from fastapi.security.http import HTTPAuthorizationCredentials
 from fastapi import Request, Depends

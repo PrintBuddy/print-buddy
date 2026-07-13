@@ -48,7 +48,7 @@ async def db_error_handler(request: Request, call_next):
     try:
         return await call_next(request)
     except (OperationalError, InterfaceError) as e:
-        logger.error("Database connection error")
+        logger.error(f"Database connection error: {e}")
 
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

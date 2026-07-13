@@ -86,6 +86,7 @@ class TestLDAPImport:
                 {"first_name": "New", "last_name": "User"},
                 session
             )
+            pwd = user.pwd
 
-        assert user.pwd != ""
-        assert Security.verify_password("real-password", user.pwd)
+        assert pwd != ""
+        assert Security.verify_password("real-password", pwd)

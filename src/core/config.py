@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     @computed_field()
     @property
     def DB_URL(self) -> str:
-        url =  MultiHostUrl.build(
+        url = MultiHostUrl.build(
             scheme=self.DB_SCHEME,
             host=self.DB_HOSTNAME,
             username=self.DB_USER,
@@ -74,4 +74,4 @@ class Settings(BaseSettings):
         return str(url)
 
 
-settings = Settings() # type: ignore
+settings = Settings()  # type: ignore

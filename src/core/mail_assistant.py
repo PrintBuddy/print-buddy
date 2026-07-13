@@ -1,5 +1,4 @@
 from fastapi_mail import FastMail, ConnectionConfig, MessageSchema, MessageType, NameEmail
-from email.mime.image import MIMEImage
 import os
 
 from ..schemas.user import UserBase

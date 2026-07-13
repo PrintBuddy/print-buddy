@@ -30,7 +30,7 @@ class PrinterService:
         return printers
 
     def get_active_printers(self, session: Session):
-        stmt = select(Printer).where(Printer.is_active == True)
+        stmt = select(Printer).where(Printer.is_active.is_(True))
         printers = session.exec(stmt).all()
         return printers
     

@@ -5,8 +5,7 @@ from ..dependencies.database import SessionDep
 from ..dependencies.pagination import PaginationDep
 
 from ...db.crud.transaction import TransactionService
-from ...db.models.transaction import TransactionType
-from ...schemas.transaction import TransactionRead, TransactionCreate
+from ...schemas.transaction import TransactionRead
 
 from ...db.crud.user import UserService
 from ...db.crud.app_config import AppConfigService

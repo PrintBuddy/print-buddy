@@ -18,7 +18,6 @@ from ...schemas.refund import (
 )
 from ...schemas.transaction import TransactionCreate
 from ...db.models.transaction import TransactionType
-import uuid
 
 
 router = APIRouter()

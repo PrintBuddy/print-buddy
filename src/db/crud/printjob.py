@@ -1,6 +1,6 @@
 from sqlmodel import Session, select, or_
 
-from ...db.models.printerjob import PrintJob, JobStatus, TRANSIT_STATUS, ERROR_STATUS
+from ...db.models.printerjob import PrintJob, JobStatus, TRANSIT_STATUS
 from ...schemas.printjob import PrintJobCreate
 from ...core.utils import generate_time
 

@@ -78,7 +78,7 @@ class Security:
             return payload
 
         except JWTError as e:
-            logger.warning("Received an invalid or expired token")
+            logger.warning(f"Received an invalid or expired token: {e}")
             return None
         
     @classmethod
@@ -101,5 +101,5 @@ class Security:
             )
             return email
         except Exception as e:
-            logger.warning("Invalid or expired password reset token")
+            logger.warning(f"Invalid or expired password reset token: {e}")
             return None

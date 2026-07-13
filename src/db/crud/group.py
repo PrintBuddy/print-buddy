@@ -195,7 +195,7 @@ class GroupService:
             permitted_ids = set()
 
         printers = session.exec(
-            select(Printer).where(Printer.is_active == True)
+            select(Printer).where(Printer.is_active.is_(True))
         ).all()
 
         return [

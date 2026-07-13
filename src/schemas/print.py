@@ -1,7 +1,5 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from enum import Enum
-
-from ..core.utils import is_valid_page_range
 
 
 class SidesOption(str, Enum):
