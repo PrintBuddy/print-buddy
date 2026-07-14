@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_serializer, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator
 from datetime import datetime
 import re
 import uuid
@@ -73,7 +73,7 @@ class UserUpdate(BaseModel):
 
 class UserAdminUpdate(UserUpdate):
     balance: float | None = None
-    credit_limit: float | None = None
+    credit_limit: float | None = Field(default=None, ge=0)
     is_active: bool | None = None
     is_admin: bool | None = None
 

@@ -163,9 +163,9 @@ class CUPSManager:
         
         except cups.IPPError:
             return ""
-        
-        except Exception as e:
-            print(e)
+
+        except Exception:
+            logger.exception(f"Unexpected error submitting print job to {printer_name}")
             return ""
         
     def _merge_with_cache(self, printer_name: str, raw_markers: list[dict]) -> list[dict]:

@@ -1,5 +1,7 @@
-from fastapi import APIRouter, status, BackgroundTasks
+from fastapi import APIRouter, Request, status, BackgroundTasks
 from fastapi import HTTPException
+
+from ...core.limiter import limiter
 
 from .settings import AD_CONFIG_KEY
 
@@ -60,7 +62,9 @@ def register(
     status_code=status.HTTP_200_OK,
     response_model=AccessTokenResponse
 )
+@limiter.limit("5/minute")
 def login(
+    request: Request,
     user: UserLogin,
     session: SessionDep
 ):
