@@ -1,5 +1,4 @@
 from fastapi import APIRouter, status
-from math import ceil
 from sqlmodel import select
 import uuid
 
@@ -7,6 +6,7 @@ from ..dependencies.token import AdminTokenDep, TokenDep
 from ..dependencies.database import SessionDep
 
 from sqlmodel import func
+from sqlalchemy import case, cast, String
 
 from ...db.models.printerjob import PrintJob, JobStatus
 from ...db.models.transaction import Transaction, TransactionType
@@ -16,6 +16,21 @@ from ...schemas.stats import GlobalStats, PrinterPageStats, UserPageStats, Finan
 
 
 router = APIRouter()
+
+
+# `(pages + 1) / 2` is `ceil(pages / 2)` for positive integers, computed via
+# plain integer division so it's portable across Postgres and SQLite (the
+# test suite's engine) without relying on a SQL CEIL() function.
+def _sheets_expr():
+    return case((PrintJob.two_sided, (PrintJob.pages + 1) / 2), else_=PrintJob.pages)
+
+
+def _bw_expr():
+    return case((PrintJob.color.is_(False), PrintJob.pages), else_=0)
+
+
+def _color_expr():
+    return case((PrintJob.color.is_(True), PrintJob.pages), else_=0)
 
 
 @router.get(
@@ -30,51 +45,52 @@ def get_my_stats(
     """Return personal printing statistics for the authenticated user."""
     user_id = uuid.UUID(token.credentials)
 
-    jobs = list(session.exec(
-        select(PrintJob).where(
-            PrintJob.user_id == user_id,
-            PrintJob.status == JobStatus.COMPLETED
+    printer_rows = session.exec(
+        select(
+            PrintJob.printer_name,
+            func.sum(PrintJob.pages),
+            func.sum(_bw_expr()),
+            func.sum(_color_expr()),
+            func.sum(_sheets_expr()),
+            func.sum(PrintJob.cost),
+            func.count(),
         )
-    ).all())
-
-    def job_sheets(job: PrintJob) -> int:
-        return ceil(job.pages / 2) if job.two_sided else job.pages
-
-    total_pages = sum(j.pages for j in jobs)
-    bw_pages = sum(j.pages for j in jobs if not j.color)
-    color_pages = sum(j.pages for j in jobs if j.color)
-    total_sheets = sum(job_sheets(j) for j in jobs)
-    total_jobs = len(jobs)
-
-    total_refunded = sum(
-        t.amount for t in session.exec(
-            select(Transaction).where(
-                Transaction.user_id == user_id,
-                Transaction.type == TransactionType.REFUND,
-                Transaction.amount > 0,
-            )
-        ).all()
-    )
-    total_spent = round(max(sum(j.cost for j in jobs) - total_refunded, 0), 2)
-
-    printer_stats: dict[str, dict] = {}
-    for job in jobs:
-        name = job.printer_name
-        if name not in printer_stats:
-            printer_stats[name] = {"total_pages": 0, "bw_pages": 0, "color_pages": 0, "total_sheets": 0, "total_cost": 0.0}
-        printer_stats[name]["total_pages"] += job.pages
-        printer_stats[name]["total_sheets"] += job_sheets(job)
-        printer_stats[name]["total_cost"] += job.cost
-        if job.color:
-            printer_stats[name]["color_pages"] += job.pages
-        else:
-            printer_stats[name]["bw_pages"] += job.pages
+        .where(
+            PrintJob.user_id == user_id,
+            PrintJob.status == JobStatus.COMPLETED,
+        )
+        .group_by(PrintJob.printer_name)
+    ).all()
 
     by_printer = [
-        PrinterPageStats(printer_name=k, **{**v, "total_cost": round(v["total_cost"], 2)})
-        for k, v in printer_stats.items()
+        PrinterPageStats(
+            printer_name=name,
+            total_pages=int(pages or 0),
+            bw_pages=int(bw or 0),
+            color_pages=int(color or 0),
+            total_sheets=int(sheets or 0),
+            total_cost=round(float(cost or 0), 2),
+        )
+        for name, pages, bw, color, sheets, cost, _jobs in printer_rows
     ]
     by_printer.sort(key=lambda x: x.total_pages, reverse=True)
+
+    total_pages = sum(int(row[1] or 0) for row in printer_rows)
+    bw_pages = sum(int(row[2] or 0) for row in printer_rows)
+    color_pages = sum(int(row[3] or 0) for row in printer_rows)
+    total_sheets = sum(int(row[4] or 0) for row in printer_rows)
+    total_jobs = sum(int(row[6]) for row in printer_rows)
+    total_cost_sum = sum(float(row[5] or 0) for row in printer_rows)
+
+    total_refunded = session.exec(
+        select(func.sum(Transaction.amount)).where(
+            Transaction.user_id == user_id,
+            Transaction.type == TransactionType.REFUND,
+            Transaction.amount > 0,
+        )
+    ).one() or 0
+
+    total_spent = round(max(total_cost_sum - total_refunded, 0), 2)
 
     return UserPersonalStats(
         total_pages=total_pages,
@@ -98,93 +114,88 @@ def get_stats_overview(
 ):
     """Return aggregated statistics for the admin dashboard (admin only)."""
 
-    # ── Print jobs ────────────────────────────────────────────────────────────
-    jobs = list(session.exec(
-        select(PrintJob).where(PrintJob.status == JobStatus.COMPLETED)
-    ).all())
-
-    total_pages = sum(j.pages for j in jobs)
-    bw_pages = sum(j.pages for j in jobs if not j.color)
-    color_pages = sum(j.pages for j in jobs if j.color)
-    total_jobs = len(jobs)
-
-    def job_sheets(job: PrintJob) -> int:
-        return ceil(job.pages / 2) if job.two_sided else job.pages
-
-    total_sheets = sum(job_sheets(j) for j in jobs)
-
     # ── By printer ────────────────────────────────────────────────────────────
-    printer_stats: dict[str, dict] = {}
-    for job in jobs:
-        name = job.printer_name
-        if name not in printer_stats:
-            printer_stats[name] = {"total_pages": 0, "bw_pages": 0, "color_pages": 0, "total_sheets": 0, "total_cost": 0.0}
-        printer_stats[name]["total_pages"] += job.pages
-        printer_stats[name]["total_sheets"] += job_sheets(job)
-        printer_stats[name]["total_cost"] += job.cost
-        if job.color:
-            printer_stats[name]["color_pages"] += job.pages
-        else:
-            printer_stats[name]["bw_pages"] += job.pages
+    printer_rows = session.exec(
+        select(
+            PrintJob.printer_name,
+            func.sum(PrintJob.pages),
+            func.sum(_bw_expr()),
+            func.sum(_color_expr()),
+            func.sum(_sheets_expr()),
+            func.sum(PrintJob.cost),
+            func.count(),
+        )
+        .where(PrintJob.status == JobStatus.COMPLETED)
+        .group_by(PrintJob.printer_name)
+    ).all()
 
     by_printer = [
-        PrinterPageStats(printer_name=k, **{**v, "total_cost": round(v["total_cost"], 2)})
-        for k, v in printer_stats.items()
+        PrinterPageStats(
+            printer_name=name,
+            total_pages=int(pages or 0),
+            bw_pages=int(bw or 0),
+            color_pages=int(color or 0),
+            total_sheets=int(sheets or 0),
+            total_cost=round(float(cost or 0), 2),
+        )
+        for name, pages, bw, color, sheets, cost, _jobs in printer_rows
     ]
     by_printer.sort(key=lambda x: x.total_pages, reverse=True)
 
-    # ── By user ───────────────────────────────────────────────────────────────
-    user_id_set = {j.user_id for j in jobs}
-    users_in_db: dict = {}
-    if user_id_set:
-        db_users = session.exec(select(User).where(User.id.in_(user_id_set))).all()
-        users_in_db = {u.id: u for u in db_users}
+    total_pages = sum(int(row[1] or 0) for row in printer_rows)
+    bw_pages = sum(int(row[2] or 0) for row in printer_rows)
+    color_pages = sum(int(row[3] or 0) for row in printer_rows)
+    total_sheets = sum(int(row[4] or 0) for row in printer_rows)
+    total_jobs = sum(int(row[6]) for row in printer_rows)
 
-    user_stats: dict[str, dict] = {}
-    for job in jobs:
-        uid = str(job.user_id)
-        if uid not in user_stats:
-            user_obj = users_in_db.get(job.user_id)
-            username = user_obj.username if user_obj else uid
-            user_stats[uid] = {
-                "username": username,
-                "total_pages": 0,
-                "bw_pages": 0,
-                "color_pages": 0,
-                "total_sheets": 0,
-            }
-        user_stats[uid]["total_pages"] += job.pages
-        user_stats[uid]["total_sheets"] += job_sheets(job)
-        if job.color:
-            user_stats[uid]["color_pages"] += job.pages
-        else:
-            user_stats[uid]["bw_pages"] += job.pages
+    # ── By user ───────────────────────────────────────────────────────────────
+    user_rows = session.exec(
+        select(
+            PrintJob.user_id,
+            func.coalesce(User.username, cast(PrintJob.user_id, String)),
+            func.sum(PrintJob.pages),
+            func.sum(_bw_expr()),
+            func.sum(_color_expr()),
+            func.sum(_sheets_expr()),
+        )
+        .outerjoin(User, User.id == PrintJob.user_id)
+        .where(PrintJob.status == JobStatus.COMPLETED)
+        .group_by(PrintJob.user_id, User.username)
+    ).all()
 
     by_user = [
-        UserPageStats(user_id=k, **v)
-        for k, v in user_stats.items()
+        UserPageStats(
+            user_id=str(uid),
+            username=username,
+            total_pages=int(pages or 0),
+            bw_pages=int(bw or 0),
+            color_pages=int(color or 0),
+            total_sheets=int(sheets or 0),
+        )
+        for uid, username, pages, bw, color, sheets in user_rows
     ]
     by_user.sort(key=lambda x: x.total_pages, reverse=True)
 
     # ── Finance ───────────────────────────────────────────────────────────────
-    transactions = list(session.exec(select(Transaction)).all())
+    # One row per TransactionType present in the data, instead of loading
+    # every transaction into Python to filter/sum per type.
+    pos_sum = func.sum(case((Transaction.amount > 0, Transaction.amount), else_=0))
+    abs_sum = func.sum(func.abs(Transaction.amount))
+    raw_sum = func.sum(Transaction.amount)
 
-    total_recharged = sum(
-        t.amount for t in transactions
-        if t.type == TransactionType.RECHARGE and t.amount > 0
-    )
-    total_spent_on_print = sum(
-        abs(t.amount) for t in transactions
-        if t.type == TransactionType.PRINT
-    )
-    total_refunded = sum(
-        t.amount for t in transactions
-        if t.type == TransactionType.REFUND and t.amount > 0
-    )
-    total_adjustments = sum(
-        t.amount for t in transactions
-        if t.type == TransactionType.ADJUSTMENT
-    )
+    finance_rows = session.exec(
+        select(Transaction.type, pos_sum, abs_sum, raw_sum).group_by(Transaction.type)
+    ).all()
+    finance_by_type = {row[0]: row for row in finance_rows}
+
+    def _agg(tx_type, idx):
+        row = finance_by_type.get(tx_type)
+        return float(row[idx] or 0) if row else 0.0
+
+    total_recharged = _agg(TransactionType.RECHARGE, 1)
+    total_spent_on_print = _agg(TransactionType.PRINT, 2)
+    total_refunded = _agg(TransactionType.REFUND, 1)
+    total_adjustments = _agg(TransactionType.ADJUSTMENT, 3)
 
     # Sum of current balances across all users
     total_current_balance_result = session.exec(
