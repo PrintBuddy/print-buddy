@@ -63,6 +63,94 @@ jobs:
       - name: Test
         run: pytest -v
 
+  e2e:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: backend
+
+      - name: Checkout print-buddy-infra (E2E stack + Playwright suite)
+        uses: actions/checkout@v4
+        with:
+          repository: PrintBuddy/print-buddy-infra
+          path: infra
+
+      - name: Checkout frontend (built fresh below — see infra/e2e/README.md)
+        uses: actions/checkout@v4
+        with:
+          repository: PrintBuddy/print-buddy-frontend
+          path: frontend-src
+
+      - name: Build backend image (this PR's code)
+        run: docker build -t local-backend:e2e ./backend
+
+      - name: Build frontend image for the E2E stack
+        # VITE_API_BASE_URL is baked in at build time — must point at the
+        # backend's host-published port, since Playwright's browser runs
+        # on this runner, not inside the compose network (see
+        # infra/e2e/README.md).
+        run: |
+          docker build \
+            --build-arg VITE_API_BASE_URL=http://localhost:8000/api \
+            -t local-frontend:e2e \
+            ./frontend-src/app
+
+      - name: Start the E2E stack
+        working-directory: infra/e2e
+        env:
+          BACKEND_IMAGE: local-backend:e2e
+          FRONTEND_IMAGE: local-frontend:e2e
+        run: |
+          docker compose -f docker-compose.e2e.yml up -d --build
+
+      - name: Wait for backend health
+        # docker-entrypoint.sh already runs `alembic upgrade head` before
+        # starting uvicorn, so a healthy response means migrations are
+        # applied too — no separate migration step needed here.
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/api/health >/dev/null; then
+              echo "Backend is healthy."
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Backend never became healthy." >&2
+          exit 1
+
+      - name: Seed test users, admin, and printer pricing
+        working-directory: infra/e2e
+        run: python3 seed.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright
+        working-directory: infra/e2e
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        working-directory: infra/e2e
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: infra/e2e/playwright-report/
+          retention-days: 7
+
+      - name: Tear down the E2E stack
+        if: always()
+        working-directory: infra/e2e
+        run: docker compose -f docker-compose.e2e.yml down -v
+
   build-and-push:
     needs: test
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
