@@ -66,6 +66,14 @@ jobs:
   e2e:
     needs: test
     runs-on: ubuntu-latest
+    env:
+      # Every docker compose invocation in this job re-validates the whole
+      # compose file (image refs included), even when a step only touches
+      # one service (e.g. seed.py's `exec postgres` calls, or the final
+      # teardown) — so these need to be job-scoped, not just set on the
+      # "Start the E2E stack" step.
+      BACKEND_IMAGE: local-backend:e2e
+      FRONTEND_IMAGE: local-frontend:e2e
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,9 +107,6 @@ jobs:
 
       - name: Start the E2E stack
         working-directory: infra/e2e
-        env:
-          BACKEND_IMAGE: local-backend:e2e
-          FRONTEND_IMAGE: local-frontend:e2e
         run: |
           docker compose -f docker-compose.e2e.yml up -d --build
 
