@@ -30,6 +30,14 @@ class RefundRequest(SQLModel, table=True):
 
     admin_message: str = Field(nullable=True, default=None)
 
+    # Set only for admin-initiated overrides (refunding a job the user
+    # never requested a refund for) — null for the normal user-request ->
+    # admin-approve flow. Distinguishes the two without needing a second
+    # status value.
+    initiated_by_admin_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+
     resolved_by_username: str = Field(nullable=True, default=None)
 
     created_at: datetime = Field(

@@ -14,6 +14,7 @@ class TransactionType(str, Enum):
     PRINT = "print"
     EXPENSE = "expense"
     PRODUCT_PURCHASE = "product_purchase"
+    FREE_REPRINT = "free_reprint"
 
 
 class ActorType(str, Enum):

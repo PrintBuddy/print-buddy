@@ -7,7 +7,7 @@ from ..dependencies.database import SessionDep
 from ..dependencies.pagination import PaginationDep
 
 from ...schemas.print import PrintOptions
-from ...schemas.printjob import PrintJobCreate, PrintJobRead, PrintJobAdminRead
+from ...schemas.printjob import PrintJobCreate, PrintJobRead, PrintJobAdminRead, FreeReprintCreate
 
 from ...db.crud.printjob import PrintJobService
 from ...db.crud.group import GroupService
@@ -142,3 +142,27 @@ def get_all_jobs(
 ):
     """Get all print jobs across all users (admin only)."""
     return pj_service.get_all_jobs(session, pagination.limit, pagination.offset)
+
+
+@router.post(
+    '/jobs/{job_id}/free-reprint',
+    response_model=PrintJobAdminRead,
+    status_code=status.HTTP_201_CREATED
+)
+def free_reprint(
+    job_id: str,
+    data: FreeReprintCreate,
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    """Re-sends an earlier job at no cost — a customer-service gesture,
+    e.g. a paper jam or print-quality issue. Every reprint requires a
+    reason and leaves an immutable, zero-amount FREE_REPRINT Transaction
+    for audit visibility even though no money moves."""
+    admin_id = token.credentials
+
+    original_job = pj_service.get_job_by_id(job_id, session)
+    if original_job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Print job not found")
+
+    return print_assistant.send_free_reprint(original_job, admin_id, data.reason, session)
