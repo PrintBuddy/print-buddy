@@ -13,6 +13,7 @@ class TransactionType(str, Enum):
     REFUND = "refund"
     PRINT = "print"
     EXPENSE = "expense"
+    PRODUCT_PURCHASE = "product_purchase"
 
 
 class ActorType(str, Enum):
@@ -81,6 +82,9 @@ class Transaction(SQLModel, table=True):
     )
     related_expense_id: uuid.UUID | None = Field(
         default=None, foreign_key="expense.id", ondelete="SET NULL"
+    )
+    related_product_id: uuid.UUID | None = Field(
+        default=None, foreign_key="product.id", ondelete="SET NULL"
     )
 
     # Set once a Super Admin sweeps this row's cash/transfer recharge out

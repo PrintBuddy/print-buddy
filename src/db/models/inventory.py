@@ -66,5 +66,8 @@ class InventoryMovement(SQLModel, table=True):
     related_expense_id: uuid.UUID | None = Field(
         default=None, foreign_key="expense.id", ondelete="SET NULL"
     )
+    related_product_id: uuid.UUID | None = Field(
+        default=None, foreign_key="product.id", ondelete="SET NULL"
+    )
 
     created_at: datetime = Field(default_factory=generate_time, nullable=False)

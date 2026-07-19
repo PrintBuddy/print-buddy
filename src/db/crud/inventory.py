@@ -63,6 +63,7 @@ class InventoryService:
         *,
         related_job_id: str | None = None,
         related_expense_id: str | None = None,
+        related_product_id: str | None = None,
     ) -> StockUpdateResult:
         """Atomically applies `delta` to an item's stock (same
         UPDATE...RETURNING pattern as UserService.adjust_balance, so
@@ -88,6 +89,7 @@ class InventoryService:
             reason=reason,
             related_job_id=uuid.UUID(related_job_id) if related_job_id else None,
             related_expense_id=uuid.UUID(related_expense_id) if related_expense_id else None,
+            related_product_id=uuid.UUID(related_product_id) if related_product_id else None,
         )
         session.add(movement)
         session.commit()
