@@ -8,6 +8,9 @@ from .refund_request import RefundRequest
 from .recharge_request import RechargeRequest
 from .app_config import AppConfig
 from .group import Group, UserGroup, GroupPrinterPermit
+from .collection_event import CollectionEvent
+from .expense import Expense
+from .inventory import InventoryItem, InventoryMovement
 
 # Re-exported so importing this package (as migrations/env.py does, for
 # Alembic autogenerate) registers every model on SQLModel.metadata.
@@ -24,4 +27,8 @@ __all__ = [
     "Group",
     "UserGroup",
     "GroupPrinterPermit",
+    "CollectionEvent",
+    "Expense",
+    "InventoryItem",
+    "InventoryMovement",
 ]

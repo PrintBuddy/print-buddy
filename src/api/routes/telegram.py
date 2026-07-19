@@ -1,9 +1,7 @@
 import hmac
-import uuid
 
 from fastapi import APIRouter, Depends, Header, status, HTTPException
 from fastapi.responses import JSONResponse
-from sqlmodel import select
 
 from ..dependencies.database import SessionDep
 
@@ -18,15 +16,15 @@ from ...schemas.telegram import (
 from ...schemas.user import UserRead, UserAdminRead
 from ...db.crud.user import UserService
 
-from ...schemas.transaction import TransactionCreate
-from ...db.crud.transaction import TransactionService
-from ...db.models.transaction import Transaction, TransactionType
+from ...db.models.transaction import ActorType
 
 from ...db.crud.telegram_admin import TelegramAdminService
 from ...db.crud.recharge_request import RechargeRequestService
-from ...db.models.recharge_request import RechargeRequest, RechargeRequestStatus
+from ...db.models.recharge_request import RechargeRequest
 from ...core.utils import round_money
 from ...core.config import settings
+from ...core.ledger_service import LedgerService
+from ...core.recharge_request_service import recharge_request_resolver
 
 
 def verify_telegram_secret(x_telegram_secret: str | None = Header(default=None)) -> None:
@@ -45,9 +43,9 @@ def verify_telegram_secret(x_telegram_secret: str | None = Header(default=None))
 
 router = APIRouter(dependencies=[Depends(verify_telegram_secret)])
 user_service = UserService()
-tx_service = TransactionService()
 ta_service = TelegramAdminService()
 recharge_request_service = RechargeRequestService()
+ledger_service = LedgerService()
 
 
 def _require_telegram_admin(chat_id: str, session) -> str:
@@ -76,6 +74,13 @@ def _serialize_recharge_request(request: RechargeRequest) -> dict:
         "resolved_by_username": request.resolved_by_username,
         "created_at": request.created_at,
         "updated_at": request.updated_at,
+        # Only ever set for requests created from the web app (see
+        # api/routes/recharge_request.py) — lets the bot edit that single
+        # message in place if a web-created request gets approved/rejected
+        # by pressing its Telegram button, even though the bot's own
+        # in-memory notification tracking never saw this request created.
+        "notified_chat_id": request.notified_chat_id,
+        "notified_message_id": request.notified_message_id,
     }
 
 
@@ -146,11 +151,12 @@ def adjust_balance(
     user_id = str(user.id)
     amount = round_money(adjust_data.amount)
 
-    balance = round_money(user.balance)
-    diff = round_money(amount - balance)
+    admin = user_service.get_username_by_id(admin_id, session)
 
-    result = user_service.adjust_balance(
-        user_id, diff, session, enforce_credit_limit=True
+    result = ledger_service.record_adjustment(
+        user_id, amount, admin_id, ActorType.ADMIN, session,
+        note=f"Adjusted by {admin}",
+        current_balance=user.balance,
     )
     if not result.ok:
         raise HTTPException(
@@ -163,18 +169,6 @@ def adjust_balance(
                 else "Adjustment would exceed the user's credit limit"
             ),
         )
-
-    admin = user_service.get_username_by_id(admin_id, session)
-
-    tx_data = TransactionCreate(
-        user_id=user.id,
-        type=TransactionType.ADJUSTMENT,
-        amount=diff,
-        balance_after=result.new_balance,  # type: ignore
-        note=f"Adjusted by {admin}"
-    )
-
-    tx_service.create_transaction(tx_data, session)
 
     # `user` was loaded before the atomic update above; its in-memory
     # balance is stale, and this response serializes it.
@@ -199,8 +193,12 @@ def recharge_user(
     user_id = str(user.id)
     amount = round_money(recharge_info.amount)
 
-    result = user_service.adjust_balance(
-        user_id, amount, session, enforce_credit_limit=False
+    admin = user_service.get_username_by_id(admin_id, session)
+
+    result = ledger_service.record_recharge(
+        user_id, amount, admin_id, ActorType.ADMIN, session,
+        note=f"Recharge made by {admin}",
+        enforce_credit_limit=False,
     )
     if not result.ok:
         raise HTTPException(
@@ -208,18 +206,6 @@ def recharge_user(
             detail="User not found"
         )
 
-    admin = user_service.get_username_by_id(admin_id, session)
-
-    tx_data = TransactionCreate(
-        user_id=user.id,
-        type=TransactionType.RECHARGE,
-        amount=amount,
-        balance_after=result.new_balance,  # type: ignore
-        note=f"Recharge made by {admin}"
-    )
-
-    tx_service.create_transaction(tx_data, session)
-    
     return { "success": True }
 
 
@@ -273,53 +259,33 @@ def resolve_recharge_request(
     if admin_username is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin user not found")
 
-    stmt = (
-        select(RechargeRequest)
-        .where(RechargeRequest.id == uuid.UUID(request_id))
-        .with_for_update()
+    result = recharge_request_resolver.resolve(
+        request_id,
+        approve=(resolve_data.action == RechargeRequestAction.APPROVE),
+        actor_id=admin_id,
+        actor_type=ActorType.ADMIN,
+        resolved_by_username=admin_username,
+        session=session,
     )
-    request = session.exec(stmt).first()
-    if request is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recharge request not found")
 
+    if not result.ok:
+        if result.reason == "not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recharge request not found")
+        if result.reason == "already_resolved":
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={
+                    "detail": "Recharge request has already been resolved",
+                    "status": result.request.status.value,
+                    "resolved_by_username": result.request.resolved_by_username,
+                },
+            )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    request = result.request
     user = user_service.get_user_by_id(str(request.user_id), session)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    if request.status != RechargeRequestStatus.PENDING:
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content={
-                "detail": "Recharge request has already been resolved",
-                "status": request.status.value,
-                "resolved_by_username": request.resolved_by_username,
-            },
-        )
-
-    if resolve_data.action == RechargeRequestAction.APPROVE:
-        result = user_service.adjust_balance(
-            str(user.id), request.amount, session, enforce_credit_limit=False
-        )
-        if not result.ok:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-            )
-        tx_data = TransactionCreate(
-            user_id=user.id,
-            type=TransactionType.RECHARGE,
-            amount=request.amount,
-            balance_after=result.new_balance,
-            note=f"Recharge request approved by {admin_username}"
-        )
-        session.add(Transaction(**tx_data.model_dump()))
-        request.status = RechargeRequestStatus.APPROVED
-    else:
-        request.status = RechargeRequestStatus.REJECTED
-
-    request.resolved_by_username = admin_username
-    session.add(request)
-    session.commit()
-    session.refresh(request)
 
     return {
         "request": _serialize_recharge_request(request),

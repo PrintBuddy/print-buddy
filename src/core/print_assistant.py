@@ -8,7 +8,7 @@ from ..db.crud.file import FileService
 from ..db.crud.printjob import PrintJobService
 from ..db.crud.transaction import TransactionService
 
-from ..db.models.transaction import TransactionType
+from ..db.models.transaction import TransactionType, ActorType
 
 from ..schemas.printjob import PrintJobCreate
 from ..schemas.transaction import TransactionCreate
@@ -134,7 +134,11 @@ class PrintAssistant:
             type=TransactionType.PRINT,
             amount=-round_money(printjob.cost),
             balance_after=debit.new_balance,  # type: ignore
-            note=f"Printed file: {pj.file_name}"
+            note=f"Printed file: {pj.file_name}",
+            actor_id=uuid.UUID(printjob.user_id),
+            actor_type=ActorType.USER,
+            target_user_id=uuid.UUID(printjob.user_id),
+            related_job_id=pj.id,
         )
 
         tx_service.create_transaction(tx_data, session)

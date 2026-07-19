@@ -2,6 +2,7 @@ import uuid
 
 from src.db.models.printerjob import PrintJob, JobStatus
 from src.db.models.refund_request import RefundRequest, RefundStatus
+from src.db.models.user import UserRole
 from tests.conftest import make_token, make_user
 
 
@@ -38,8 +39,8 @@ def make_refund_request(session, user, job, status=RefundStatus.PENDING, **overr
 
 
 def test_approve_refund_credits_balance(client, session):
-    user = make_user(session, balance=5.0, is_admin=False)
-    admin = make_user(session, is_admin=True)
+    user = make_user(session, balance=5.0, role=UserRole.USER)
+    admin = make_user(session, role=UserRole.ADMIN)
     job = make_completed_job(session, user, cost=1.50)
     refund = make_refund_request(session, user, job)
     admin_token = make_token(admin.id)
@@ -59,7 +60,7 @@ def test_approve_refund_credits_balance(client, session):
 
 def test_resolve_already_resolved_refund_is_conflict(client, session):
     user = make_user(session, balance=5.0)
-    admin = make_user(session, is_admin=True)
+    admin = make_user(session, role=UserRole.ADMIN)
     job = make_completed_job(session, user, cost=1.50)
     refund = make_refund_request(session, user, job, status=RefundStatus.DENIED)
     admin_token = make_token(admin.id)

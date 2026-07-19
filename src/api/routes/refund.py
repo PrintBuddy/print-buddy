@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, status, HTTPException
 
 from ..dependencies.token import TokenDep, AdminTokenDep
@@ -17,7 +19,7 @@ from ...schemas.refund import (
     RefundRequestAdminRead
 )
 from ...schemas.transaction import TransactionCreate
-from ...db.models.transaction import TransactionType
+from ...db.models.transaction import TransactionType, ActorType
 
 
 router = APIRouter()
@@ -179,7 +181,12 @@ def resolve_refund(
                 type=TransactionType.REFUND,
                 amount=job.cost,
                 balance_after=result.new_balance,  # type: ignore
-                note=f"Refund approved by {admin_username} for job {job.file_name}"
+                note=f"Refund approved by {admin_username} for job {job.file_name}",
+                actor_id=uuid.UUID(admin_id),
+                actor_type=ActorType.ADMIN,
+                target_user_id=refund.user_id,
+                related_refund_request_id=refund.id,
+                related_job_id=job.id,
             )
 
     updated = refund_service.update_refund_request(refund_id, data, session, resolved_by_username=admin_username)

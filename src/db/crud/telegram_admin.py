@@ -2,6 +2,7 @@ from sqlmodel import Session, select
 import uuid
 
 from ..models.telegram_admin import TelegramAdmin
+from ..models.user import User
 
 
 class TelegramAdminService:
@@ -57,6 +58,25 @@ class TelegramAdminService:
     ) -> list[str]:
         stmt = select(TelegramAdmin.telegram_id)
         return list(session.exec(stmt).all())
+
+    def get_eligible_admins(
+        self,
+        session: Session
+    ) -> list[tuple[TelegramAdmin, User]]:
+        """Every TelegramAdmin paired with its User row, for the "who did
+        you pay" picker — deliberately joined here (not just a bare
+        TelegramAdmin list) so the caller never has to look up chat_id and
+        display name separately."""
+        stmt = select(TelegramAdmin, User).join(User, TelegramAdmin.user_id == User.id)
+        return list(session.exec(stmt).all())
+
+    def get_by_id(
+        self,
+        ta_id: str,
+        session: Session
+    ) -> TelegramAdmin | None:
+        stmt = select(TelegramAdmin).where(TelegramAdmin.id == uuid.UUID(ta_id))
+        return session.exec(stmt).first()
 
     def delete_telegram_admin(
         self,

@@ -1,6 +1,5 @@
 from fastapi import APIRouter, status, HTTPException
 from pathlib import Path
-import uuid
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
@@ -9,19 +8,21 @@ from ..dependencies.pagination import PaginationDep
 from ...schemas.user import UserRead, UserUpdate, UserAdminRead, UserEmailRequest, UserChangePassword, UserAdminUpdate
 from ...db.crud.user import UserService
 
-from ...schemas.transaction import TransactionCreate, TransactionRead
+from ...schemas.transaction import TransactionRead
 from ...db.crud.transaction import TransactionService
-from ...db.models.transaction import TransactionType
+from ...db.models.transaction import ActorType
 
 from ...core.file_manager import FileManager
 from ...core.config import settings
 from ...core.security import Security
 from ...core.utils import round_money
+from ...core.ledger_service import LedgerService
 
 
 router = APIRouter()
 user_service = UserService()
 tx_service = TransactionService()
+ledger_service = LedgerService()
 fm = FileManager()
 
 
@@ -271,24 +272,18 @@ def recharge_user_balance(
             detail="User not found"
         )
 
-    result = user_service.adjust_balance(
-        user_id, amount, session, enforce_credit_limit=False
+    admin = user_service.get_username_by_id(admin_id, session)
+
+    result = ledger_service.record_recharge(
+        user_id, amount, admin_id, ActorType.ADMIN, session,
+        note=f"Recharge by {admin}",
+        enforce_credit_limit=False,
     )
     if not result.ok:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    admin = user_service.get_username_by_id(admin_id, session)
-
-    tx_data = TransactionCreate(
-        user_id=uuid.UUID(user_id),
-        type=TransactionType.RECHARGE,
-        amount=amount,
-        balance_after=result.new_balance,  # type: ignore
-        note=f"Recharge by {admin}"
-    )
-    tx_service.create_transaction(tx_data, session)
     return user_service.get_user_by_id(user_id, session)
 
 
@@ -311,13 +306,13 @@ def adjust_user_balance(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
-    target_balance = round_money(amount)
-    balance = round_money(user.balance)
-    diff = round_money(target_balance - balance)
 
-    result = user_service.adjust_balance(
-        user_id, diff, session, enforce_credit_limit=True
+    admin = user_service.get_username_by_id(admin_id, session)
+
+    result = ledger_service.record_adjustment(
+        user_id, amount, admin_id, ActorType.ADMIN, session,
+        note=f"Balance adjustment by {admin}",
+        current_balance=user.balance,
     )
     if not result.ok:
         raise HTTPException(
@@ -330,17 +325,6 @@ def adjust_user_balance(
                 else "Adjustment would exceed the user's credit limit"
             ),
         )
-    admin = user_service.get_username_by_id(admin_id, session)
-
-    tx_data = TransactionCreate(
-        user_id=uuid.UUID(user_id),
-        type=TransactionType.ADJUSTMENT,
-        amount=diff,
-        balance_after=result.new_balance,  # type: ignore
-        note=f"Balance adjustment by {admin}"
-    )
-
-    tx_service.create_transaction(tx_data, session)
 
     return user_service.get_user_by_id(user_id, session)
 

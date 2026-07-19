@@ -4,6 +4,7 @@ import re
 import uuid
 
 from ..core.utils import round_money
+from ..db.models.user import UserRole
 
 _USERNAME_REGEX = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_.-]{2,19}$')
 
@@ -40,6 +41,7 @@ class UserRead(BaseModel):
     balance: float
     credit_limit: float
     is_admin: bool
+    role: UserRole
     email_to_set: bool
 
     @field_serializer("balance", "credit_limit")
@@ -49,7 +51,6 @@ class UserRead(BaseModel):
 
 class UserAdminRead(UserRead):
     id: uuid.UUID
-    is_admin: bool
     is_active: bool
     created_at: datetime
 
@@ -75,7 +76,12 @@ class UserAdminUpdate(UserUpdate):
     balance: float | None = None
     credit_limit: float | None = Field(default=None, ge=0)
     is_active: bool | None = None
+    # `is_admin` is kept for backward compatibility with the existing admin
+    # UI's toggle (translated to role=ADMIN/USER in UserService.update_user);
+    # `role` is the new field for setting SUPER_ADMIN specifically. If both
+    # are sent, `role` wins.
     is_admin: bool | None = None
+    role: UserRole | None = None
 
     @field_validator("balance", "credit_limit")
     @classmethod

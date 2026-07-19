@@ -4,7 +4,7 @@ from typing import Literal
 from sqlmodel import Session, select
 from sqlalchemy import update
 
-from ..models.user import User
+from ..models.user import User, UserRole
 from ...schemas.user import UserCreate, UserUpdate
 from ...core.utils import round_money
 
@@ -40,14 +40,28 @@ class UserService:
         id: str,
         session: Session
     ) -> bool:
-        
+
         stmt = select(User).where(User.id == id)
         user = session.exec(stmt).first()
-        
+
         if user is None:
             return False
-        
+
         return user.is_admin
+
+    def user_is_super_admin(
+        self,
+        id: str,
+        session: Session
+    ) -> bool:
+
+        stmt = select(User).where(User.id == id)
+        user = session.exec(stmt).first()
+
+        if user is None:
+            return False
+
+        return user.is_super_admin
 
     def email_exists(
         self,
@@ -135,7 +149,7 @@ class UserService:
         return {username.casefold() for username in session.exec(stmt).all()}
     
     def get_admin_emails(self, session: Session) -> list[str]:
-        stmt = select(User.email).where(User.is_admin.is_(True), User.is_active.is_(True))
+        stmt = select(User.email).where(User.role != UserRole.USER, User.is_active.is_(True))
         return list(session.exec(stmt).all())
 
     def get_user_balance(
@@ -180,6 +194,14 @@ class UserService:
             data["balance"] = round_money(data["balance"])
         if "credit_limit" in data:
             data["credit_limit"] = round_money(data["credit_limit"])
+        # `is_admin` is not a real column (it's a derived property on the
+        # model) — translate it into `role` for backward compatibility with
+        # the existing admin-toggle UI, unless `role` was explicitly sent
+        # too, which wins.
+        if "is_admin" in data:
+            is_admin_value = data.pop("is_admin")
+            if "role" not in data:
+                data["role"] = UserRole.ADMIN if is_admin_value else UserRole.USER
         for key, value in data.items():
             setattr(user, key, value)
 

@@ -48,13 +48,18 @@ class TelegramRechargeRequestRead(BaseModel):
     amount: float
     message: str | None = None
     status: RechargeRequestStatus
-    requester_chat_id: str
+    requester_chat_id: str | None = None
     requester_telegram_username: str | None = None
     requester_first_name: str | None = None
     requester_last_name: str | None = None
     resolved_by_username: str | None = None
     created_at: datetime
     updated_at: datetime
+    # Only set for requests created from the web app — lets the bot fall
+    # back to editing this single message in place when its own in-memory
+    # broadcast tracking has nothing for this request_id.
+    notified_chat_id: str | None = None
+    notified_message_id: int | None = None
 
 
 class TelegramRechargeRequestResult(BaseModel):

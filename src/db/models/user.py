@@ -2,9 +2,16 @@ from datetime import datetime
 from sqlmodel import SQLModel, Field, Column
 from sqlalchemy import Numeric
 from pydantic import EmailStr
+from enum import Enum
 import uuid
 
 from ...core.utils import generate_time
+
+
+class UserRole(str, Enum):
+    USER = "user"
+    ADMIN = "admin"
+    SUPER_ADMIN = "super_admin"
 
 
 # Database model
@@ -38,7 +45,19 @@ class User(SQLModel, table=True):
 
     is_active: bool = Field(default=True)
 
-    is_admin: bool = Field(default=False)
+    role: UserRole = Field(default=UserRole.USER, nullable=False)
+
+    @property
+    def is_admin(self) -> bool:
+        """Derived from `role`, not stored — ADMIN and SUPER_ADMIN both
+        count as "an admin" for the many call sites that only need the
+        binary check; `role`/`is_super_admin` are for the finer-grained
+        checks that actually need to tell the two apart."""
+        return self.role != UserRole.USER
+
+    @property
+    def is_super_admin(self) -> bool:
+        return self.role == UserRole.SUPER_ADMIN
 
     balance: float = Field(
         default=0.0,
