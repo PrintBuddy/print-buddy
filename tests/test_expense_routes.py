@@ -28,6 +28,8 @@ def test_create_expense_appears_in_list_and_transaction_timeline(client, session
     assert body["category"] == "toner"
     assert body["amount"] == 45.5
     assert body["recorded_by_admin_id"] == str(admin.id)
+    # No payer specified — defaults to whoever recorded it.
+    assert body["paid_by_admin_id"] == str(admin.id)
 
     list_response = client.get(
         "/api/expenses",
@@ -45,6 +47,31 @@ def test_create_expense_appears_in_list_and_transaction_timeline(client, session
     assert tx.amount == -45.5
     assert tx.user_id is None
     assert str(tx.related_expense_id) == body["id"]
+
+
+def test_create_expense_with_different_payer(client, session):
+    """One admin logs the expense, but names a different admin as the one
+    who actually fronted the money."""
+    recorder = make_user(session, role=UserRole.ADMIN)
+    recorder_token = make_token(recorder.id)
+    payer = make_user(session, role=UserRole.ADMIN)
+
+    response = client.post(
+        "/api/expenses",
+        json={"category": "paper", "amount": 12.0, "paid_by_admin_id": str(payer.id)},
+        headers={"Authorization": f"Bearer {recorder_token}"},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["recorded_by_admin_id"] == str(recorder.id)
+    assert body["paid_by_admin_id"] == str(payer.id)
+
+    # The Transaction's actor is the PAYER, not the recorder — this is
+    # what makes cash-reconciliation netting attribute correctly.
+    from sqlmodel import select
+    from src.db.models.transaction import Transaction, TransactionType
+    tx = session.exec(select(Transaction).where(Transaction.type == TransactionType.EXPENSE)).first()
+    assert str(tx.actor_id) == str(payer.id)
 
 
 def test_get_missing_expense_is_404(client, session):

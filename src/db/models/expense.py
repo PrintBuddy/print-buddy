@@ -23,7 +23,15 @@ class Expense(SQLModel, table=True):
     )
     description: str = Field(nullable=True, default=None)
 
+    # Who entered this into the system — may differ from who actually paid.
     recorded_by_admin_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL", index=True
+    )
+    # Who fronted the money out of pocket — this is who the house owes (or
+    # is owed by, netted against recharges they've collected) for this
+    # expense, and what the mirrored Transaction's actor_id is set from.
+    # Defaults to recorded_by_admin_id when not given explicitly.
+    paid_by_admin_id: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL", index=True
     )
     receipt_file_id: uuid.UUID | None = Field(

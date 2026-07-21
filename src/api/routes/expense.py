@@ -31,6 +31,7 @@ def create_expense(
         admin_id,
         session,
         receipt_file_id=str(data.receipt_file_id) if data.receipt_file_id else None,
+        paid_by_admin_id=str(data.paid_by_admin_id) if data.paid_by_admin_id else None,
     )
 
 

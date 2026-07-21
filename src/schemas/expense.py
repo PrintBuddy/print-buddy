@@ -10,6 +10,9 @@ class ExpenseCreate(BaseModel):
     amount: float = Field(..., gt=0)
     description: str | None = None
     receipt_file_id: uuid.UUID | None = None
+    # Who actually paid, if different from whoever is submitting this form.
+    # Defaults to the submitting admin when omitted.
+    paid_by_admin_id: uuid.UUID | None = None
 
 
 class ExpenseRead(BaseModel):
@@ -18,5 +21,6 @@ class ExpenseRead(BaseModel):
     amount: float
     description: str | None = None
     recorded_by_admin_id: uuid.UUID | None = None
+    paid_by_admin_id: uuid.UUID | None = None
     receipt_file_id: uuid.UUID | None = None
     created_at: datetime

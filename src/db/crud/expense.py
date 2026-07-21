@@ -17,12 +17,18 @@ class ExpenseService:
         session: Session,
         *,
         receipt_file_id: str | None = None,
+        paid_by_admin_id: str | None = None,
     ) -> Expense:
+        # Defaults to the recorder — the common case is "I logged it, I
+        # paid for it." Only differs when someone else fronted the cash.
+        payer_id = paid_by_admin_id or recorded_by_admin_id
+
         expense = Expense(
             category=category,
             amount=amount,
             description=description,
             recorded_by_admin_id=uuid.UUID(recorded_by_admin_id),
+            paid_by_admin_id=uuid.UUID(payer_id),
             receipt_file_id=uuid.UUID(receipt_file_id) if receipt_file_id else None,
         )
         session.add(expense)
@@ -32,10 +38,14 @@ class ExpenseService:
         # Every expense appears in the unified transaction timeline too,
         # even though it never touches a user's balance — outflow is
         # negative, matching the sign convention PRINT debits already use.
+        # actor_id is the PAYER (not the recorder), since this is the same
+        # column cash-reconciliation nets recharges against — an expense
+        # someone else fronted must reduce *their* outstanding float, not
+        # whoever happened to type it into the app.
         tx = Transaction(
             type=TransactionType.EXPENSE,
             amount=-abs(amount),
-            actor_id=uuid.UUID(recorded_by_admin_id),
+            actor_id=uuid.UUID(payer_id),
             actor_type=ActorType.ADMIN,
             related_expense_id=expense.id,
             note=description,
