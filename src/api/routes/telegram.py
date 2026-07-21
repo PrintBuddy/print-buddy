@@ -11,20 +11,30 @@ from ...schemas.telegram import (
     TelegramRechargeRequestCreate,
     TelegramRechargeRequestResolve,
     TelegramRechargeRequestResult,
+    TelegramProductPurchaseResolve,
+    TelegramProductPurchaseResult,
+    TelegramStockAdjust,
+    TelegramExpenseCreate,
     UserBalance,
 )
 from ...schemas.user import UserRead, UserAdminRead
+from ...schemas.inventory import InventoryItemRead
 from ...db.crud.user import UserService
 
 from ...db.models.transaction import ActorType
+from ...db.models.inventory import InventoryMovementReason
 
 from ...db.crud.telegram_admin import TelegramAdminService
 from ...db.crud.recharge_request import RechargeRequestService
+from ...db.crud.product_purchase import ProductPurchaseService
+from ...db.crud.inventory import InventoryService
+from ...db.crud.expense import ExpenseService
 from ...db.models.recharge_request import RechargeRequest
 from ...core.utils import round_money
 from ...core.config import settings
 from ...core.ledger_service import LedgerService
 from ...core.recharge_request_service import recharge_request_resolver
+from ...core.product_purchase_service import product_purchase_manager
 
 
 def verify_telegram_secret(x_telegram_secret: str | None = Header(default=None)) -> None:
@@ -45,7 +55,10 @@ router = APIRouter(dependencies=[Depends(verify_telegram_secret)])
 user_service = UserService()
 ta_service = TelegramAdminService()
 recharge_request_service = RechargeRequestService()
+purchase_service = ProductPurchaseService()
 ledger_service = LedgerService()
+inventory_service = InventoryService()
+expense_service = ExpenseService()
 
 
 def _require_telegram_admin(chat_id: str, session) -> str:
@@ -293,6 +306,162 @@ def resolve_recharge_request(
         "user_name": user.name,
         "user_surname": user.surname,
     }
+
+
+def _serialize_purchase(purchase) -> dict:
+    return {
+        "id": purchase.id,
+        "user_id": purchase.user_id,
+        "username": purchase.username,
+        "product_name": purchase.product_name,
+        "quantity": purchase.quantity,
+        "total_amount": round_money(purchase.total_amount),
+        "message": purchase.message,
+        "status": purchase.status,
+        "admin_message": purchase.admin_message,
+        "resolved_by_username": purchase.resolved_by_username,
+        "created_at": purchase.created_at,
+        "updated_at": purchase.updated_at,
+    }
+
+
+@router.patch(
+    "/product-purchases/{purchase_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=TelegramProductPurchaseResult,
+)
+def resolve_product_purchase(
+    purchase_id: str,
+    resolve_data: TelegramProductPurchaseResolve,
+    session: SessionDep,
+):
+    """Resolves a purchase pressed from Telegram. Unlike the web route,
+    this deliberately does NOT edit any Telegram messages itself — the
+    bot process handling the button press already has a live connection
+    to edit them directly, and is given every notification's chat_id/
+    message_id below to do so, mirroring how the web route (which has no
+    bot process to hand this off to) does the editing itself instead."""
+    admin_id = _require_telegram_admin(resolve_data.chat_id, session)
+    admin_username = user_service.get_username_by_id(admin_id, session)
+    if admin_username is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin user not found")
+
+    result = product_purchase_manager.resolve(
+        purchase_id,
+        resolve_data.action.value,
+        admin_id,
+        ActorType.ADMIN,
+        admin_username,
+        session,
+    )
+
+    if not result.ok:
+        if result.reason == "not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+        if result.reason == "already_resolved":
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={
+                    "detail": "Purchase has already been resolved",
+                    "status": result.purchase.status.value,
+                    "resolved_by_username": result.purchase.resolved_by_username,
+                },
+            )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    notifications = purchase_service.get_notifications(str(result.purchase.id), session)
+
+    return {
+        "purchase": _serialize_purchase(result.purchase),
+        "notifications": [{"chat_id": n.chat_id, "message_id": n.message_id} for n in notifications],
+    }
+
+
+def _serialize_inventory_item(item) -> InventoryItemRead:
+    return InventoryItemRead(
+        id=item.id,
+        name=item.name,
+        category=item.category,
+        unit=item.unit,
+        current_stock=item.current_stock,
+        low_stock_threshold=item.low_stock_threshold,
+        printer_id=item.printer_id,
+        reorder_supplier=item.reorder_supplier,
+        is_active=item.is_active,
+        is_low_stock=item.current_stock <= item.low_stock_threshold,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+    )
+
+
+@router.get(
+    "/inventory",
+    status_code=status.HTTP_200_OK,
+    response_model=list[InventoryItemRead],
+)
+def get_inventory(
+    telegram_id: TelegramID,
+    session: SessionDep,
+):
+    """Active inventory items, for the bot's /stock item picker."""
+    _require_telegram_admin(telegram_id.chat_id, session)
+    items = inventory_service.get_all_items(session, active_only=True)
+    return [_serialize_inventory_item(item) for item in items]
+
+
+@router.patch(
+    "/stock-adjust",
+    status_code=status.HTTP_200_OK,
+    response_model=InventoryItemRead,
+)
+def adjust_stock(
+    adjust_data: TelegramStockAdjust,
+    session: SessionDep,
+):
+    """Manual stock correction from Telegram — always MANUAL_ADJUSTMENT,
+    same as the web app's Adjust Stock action, just reached by item name
+    instead of item id since the bot only has a name to work with."""
+    admin_id = _require_telegram_admin(adjust_data.chat_id, session)
+    admin_username = user_service.get_username_by_id(admin_id, session)
+
+    item = inventory_service.get_item_by_name(adjust_data.item_name, session)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+
+    result = inventory_service.record_movement(
+        str(item.id), adjust_data.delta, InventoryMovementReason.MANUAL_ADJUSTMENT, session,
+        notes=f"Adjusted via Telegram by {admin_username}",
+    )
+    if not result.ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+
+    return _serialize_inventory_item(inventory_service.get_item_by_id(str(item.id), session))
+
+
+@router.post(
+    "/expenses",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_expense(
+    expense_data: TelegramExpenseCreate,
+    session: SessionDep,
+):
+    """Logs an expense from Telegram. The bot itself is responsible for
+    confirming with the admin before calling this — an expense is a
+    permanent ledger entry, unlike a stock adjustment. Always attributes
+    both recorded_by and paid_by to the calling admin — Telegram has no
+    equivalent of the web app's "pick a different payer" picker."""
+    admin_id = _require_telegram_admin(expense_data.chat_id, session)
+
+    expense_service.create_expense(
+        expense_data.category,
+        round_money(expense_data.amount),
+        expense_data.description,
+        admin_id,
+        session,
+    )
+
+    return {"success": True}
 
 
 @router.post(

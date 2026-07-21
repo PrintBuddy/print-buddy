@@ -4,6 +4,8 @@ import uuid
 
 from pydantic import BaseModel, Field
 
+from ..db.models.expense import ExpenseCategory
+
 
 class TelegramID(BaseModel):
     chat_id: str
@@ -67,3 +69,57 @@ class TelegramRechargeRequestResult(BaseModel):
     admin_chat_ids: list[str]
     user_name: str
     user_surname: str
+
+
+class ProductPurchaseAction(str, Enum):
+    FULFILL = "fulfill"
+    REJECT = "reject"
+
+
+class ProductPurchaseStatus(str, Enum):
+    PENDING = "pending"
+    FULFILLED = "fulfilled"
+    REJECTED = "rejected"
+
+
+class TelegramProductPurchaseResolve(TelegramID):
+    action: ProductPurchaseAction
+
+
+class TelegramProductPurchaseRead(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    username: str
+    product_name: str
+    quantity: int
+    total_amount: float
+    message: str | None = None
+    status: ProductPurchaseStatus
+    admin_message: str | None = None
+    resolved_by_username: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class TelegramStockAdjust(TelegramID):
+    item_name: str
+    delta: float
+
+
+class TelegramExpenseCreate(TelegramID):
+    category: ExpenseCategory
+    amount: float = Field(..., gt=0)
+    description: str | None = None
+
+
+class TelegramPurchaseNotification(BaseModel):
+    chat_id: str
+    message_id: int
+
+
+class TelegramProductPurchaseResult(BaseModel):
+    purchase: TelegramProductPurchaseRead
+    # Every admin who was notified about this purchase — unlike a recharge
+    # request's single target admin, the bot has to edit one message per
+    # admin here, since the purchase was broadcast to all of them.
+    notifications: list[TelegramPurchaseNotification]
