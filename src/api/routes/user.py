@@ -96,6 +96,27 @@ def update_me(
 
 
 @router.patch(
+    '/me/tutorial-seen',
+    response_model=UserRead,
+    status_code=status.HTTP_200_OK
+)
+def mark_tutorial_seen(
+    token: TokenDep,
+    session: SessionDep
+):
+    user_id = token.credentials
+
+    user = user_service.mark_tutorial_seen(user_id, session)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail='User not found'
+        )
+
+    return user
+
+
+@router.patch(
     "/change-password",
     status_code=status.HTTP_200_OK
 )

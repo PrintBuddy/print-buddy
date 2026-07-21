@@ -230,7 +230,19 @@ class UserService:
 
         return True
 
-    
+    def mark_tutorial_seen(self, user_id: str, session: Session) -> User | None:
+        uid = uuid.UUID(user_id) if not isinstance(user_id, uuid.UUID) else user_id
+        stmt = select(User).where(User.id == uid)
+        user = session.exec(stmt).first()
+        if user is None:
+            return None
+
+        user.has_seen_tutorial = True
+        session.commit()
+        session.refresh(user)
+
+        return user
+
     def adjust_balance(
         self,
         user_id: str,

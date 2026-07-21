@@ -71,3 +71,31 @@ def test_admin_can_still_edit_non_role_fields(client, session):
     assert body["name"] == "Updated"
     assert body["credit_limit"] == 5.0
     assert body["is_active"] is False
+
+
+def test_new_user_has_not_seen_tutorial_by_default(client, session):
+    user = make_user(session)
+    token = make_token(user.id)
+
+    response = client.get("/api/users/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.json()["has_seen_tutorial"] is False
+
+
+def test_mark_tutorial_seen_flips_flag_and_is_idempotent(client, session):
+    user = make_user(session)
+    token = make_token(user.id)
+
+    response = client.patch("/api/users/me/tutorial-seen", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.json()["has_seen_tutorial"] is True
+
+    # Calling again is a no-op, not an error.
+    response = client.patch("/api/users/me/tutorial-seen", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.json()["has_seen_tutorial"] is True
+
+
+def test_mark_tutorial_seen_requires_auth(client):
+    response = client.patch("/api/users/me/tutorial-seen")
+    assert response.status_code == 403

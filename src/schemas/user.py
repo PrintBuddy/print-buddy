@@ -43,6 +43,7 @@ class UserRead(BaseModel):
     is_admin: bool
     role: UserRole
     email_to_set: bool
+    has_seen_tutorial: bool
 
     @field_serializer("balance", "credit_limit")
     def serialize_money(self, value: float) -> float:

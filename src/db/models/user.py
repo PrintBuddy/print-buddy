@@ -71,6 +71,8 @@ class User(SQLModel, table=True):
 
     email_to_set: bool = Field(default=False)
 
+    has_seen_tutorial: bool = Field(default=False)
+
     created_at: datetime = Field(
         default_factory=generate_time, 
         nullable=False
