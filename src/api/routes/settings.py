@@ -10,8 +10,9 @@ from ...db.crud.telegram_admin import TelegramAdminService
 from ...db.crud.user import UserService
 from ...db.models.transaction import Transaction, TransactionType
 from ...db.models.refund_request import RefundRequest, RefundStatus
+from ...db.models.product_purchase import ProductPurchase, ProductPurchaseStatus
 from ...db.models.user import User
-from ...schemas.settings import RechargeInfoSchema, TelegramAdminRead, TelegramAdminCreate, ActivityLogEntry, TonerAlertConfig, ADConfigSchema, ADImportResultSchema, ADImportRequestSchema, ADImportPreviewSchema
+from ...schemas.settings import TelegramAdminRead, TelegramAdminCreate, TelegramAdminUpdate, ActivityLogEntry, TonerAlertConfig, ADConfigSchema, ADImportResultSchema, ADImportRequestSchema, ADImportPreviewSchema
 from ...core.mail_assistant import send_toner_alert_email
 from ...core.ldap_assistant import LDAPAssistant
 
@@ -23,7 +24,6 @@ user_service = UserService()
 ldap_assistant = LDAPAssistant()
 
 
-RECHARGE_KEY = "recharge_info"
 TONER_ALERT_KEY = "toner_alert_config"
 TONER_ALERT_DEFAULT = {"enabled": False, "interval_hours": 24}
 AD_CONFIG_KEY = "ad_config"
@@ -147,36 +147,6 @@ def import_ad_users(
 
 # ─── Recharge Info ─────────────────────────────────────────────────────────────
 
-@router.get(
-    "/recharge-info",
-    response_model=RechargeInfoSchema,
-    status_code=status.HTTP_200_OK
-)
-def get_recharge_info(
-    token: AdminTokenDep,
-    session: SessionDep
-):
-    data = config_service.get(RECHARGE_KEY, session)
-    if data is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recharge info not found")
-    return data
-
-
-@router.put(
-    "/recharge-info",
-    response_model=RechargeInfoSchema,
-    status_code=status.HTTP_200_OK
-)
-def update_recharge_info(
-    body: RechargeInfoSchema,
-    token: AdminTokenDep,
-    session: SessionDep
-):
-    row = config_service.set(RECHARGE_KEY, body.model_dump(), session)
-    import json
-    return json.loads(row.value)
-
-
 # ─── Toner Alert Config ────────────────────────────────────────────────────────
 
 @router.get(
@@ -245,6 +215,22 @@ async def test_toner_alert(
 
 # ─── Telegram Admins ───────────────────────────────────────────────────────────
 
+def _to_telegram_admin_read(ta, user) -> TelegramAdminRead:
+    return TelegramAdminRead(
+        id=str(ta.id),
+        telegram_id=ta.telegram_id,
+        user_id=str(ta.user_id),
+        username=user.username if user else None,
+        name=user.name if user else None,
+        surname=user.surname if user else None,
+        phone_number=ta.phone_number,
+        accepts_transfer=ta.accepts_transfer,
+        bank_name=ta.bank_name,
+        bank_iban=ta.bank_iban,
+        bank_link=ta.bank_link,
+    )
+
+
 @router.get(
     "/telegram-admins",
     response_model=list[TelegramAdminRead],
@@ -256,18 +242,10 @@ def list_telegram_admins(
     pagination: PaginationDep
 ):
     admins = ta_service.get_all(session, pagination.limit, pagination.offset)
-    result = []
-    for ta in admins:
-        user = user_service.get_user_by_id(str(ta.user_id), session)
-        result.append(TelegramAdminRead(
-            id=str(ta.id),
-            telegram_id=ta.telegram_id,
-            user_id=str(ta.user_id),
-            username=user.username if user else None,
-            name=user.name if user else None,
-            surname=user.surname if user else None,
-        ))
-    return result
+    return [
+        _to_telegram_admin_read(ta, user_service.get_user_by_id(str(ta.user_id), session))
+        for ta in admins
+    ]
 
 
 @router.post(
@@ -289,16 +267,42 @@ def add_telegram_admin(
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Telegram ID already registered")
 
-    ta = ta_service.create_telegram_admin(str(user.id), body.telegram_id, session)
-
-    return TelegramAdminRead(
-        id=str(ta.id),
-        telegram_id=ta.telegram_id,
-        user_id=str(ta.user_id),
-        username=user.username,
-        name=user.name,
-        surname=user.surname,
+    ta = ta_service.create_telegram_admin(
+        str(user.id), body.telegram_id, session,
+        phone_number=body.phone_number,
+        accepts_transfer=body.accepts_transfer,
+        bank_name=body.bank_name,
+        bank_iban=body.bank_iban,
+        bank_link=body.bank_link,
     )
+
+    return _to_telegram_admin_read(ta, user)
+
+
+@router.patch(
+    "/telegram-admins/{ta_id}",
+    response_model=TelegramAdminRead,
+    status_code=status.HTTP_200_OK
+)
+def update_telegram_admin(
+    ta_id: str,
+    body: TelegramAdminUpdate,
+    token: AdminTokenDep,
+    session: SessionDep
+):
+    ta = ta_service.update_telegram_admin(
+        ta_id, session,
+        phone_number=body.phone_number,
+        accepts_transfer=body.accepts_transfer,
+        bank_name=body.bank_name,
+        bank_iban=body.bank_iban,
+        bank_link=body.bank_link,
+    )
+    if ta is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Telegram admin not found")
+
+    user = user_service.get_user_by_id(str(ta.user_id), session)
+    return _to_telegram_admin_read(ta, user)
 
 
 @router.delete(
@@ -328,7 +332,8 @@ def get_activity_log(
     session: SessionDep,
     pagination: PaginationDep
 ):
-    """Merged, chronological log of all admin-initiated recharges/adjustments and refund resolutions."""
+    """Merged, chronological log of all admin-initiated recharges/adjustments,
+    refund resolutions, and resolved (non-pending) product purchases."""
     entries: list[ActivityLogEntry] = []
 
     # Each source is independently ordered newest-first, so taking the top
@@ -385,6 +390,33 @@ def get_activity_log(
             balance_after=None,
             note=refund.admin_message,
             created_at=refund.updated_at,
+        ))
+
+    # ── Resolved product purchases ─────────────────────────────────────────────
+    purchase_stmt = (
+        select(ProductPurchase, User)
+        .join(User, ProductPurchase.user_id == User.id)  # type: ignore
+        .where(ProductPurchase.status != ProductPurchaseStatus.PENDING)
+        .order_by(ProductPurchase.updated_at.desc())  # type: ignore
+        .limit(fetch_cap)
+    )
+    for purchase, target_user in session.exec(purchase_stmt).all():
+        action = (
+            "purchase_fulfilled" if purchase.status == ProductPurchaseStatus.FULFILLED
+            else "purchase_rejected"
+        )
+        note = f"{purchase.quantity}x {purchase.product_name}"
+        if purchase.admin_message:
+            note += f' — "{purchase.admin_message}"'
+        entries.append(ActivityLogEntry(
+            id=str(purchase.id),
+            action=action,
+            admin_username=purchase.resolved_by_username,
+            target_username=target_user.username,
+            amount=None,
+            balance_after=None,
+            note=note,
+            created_at=purchase.updated_at,
         ))
 
     # Sort all entries newest-first, then apply the actual page window

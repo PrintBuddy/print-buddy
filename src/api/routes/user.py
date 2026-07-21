@@ -215,7 +215,14 @@ def update_user(
     token: AdminTokenDep,
     session: SessionDep
 ):
-    
+
+    if user_data.role is not None or user_data.is_admin is not None:
+        if not user_service.user_is_super_admin(token.credentials, session):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail='Only a super admin can assign admin roles'
+            )
+
     if user_data.email is not None:
         email_exists = user_service.email_exists(user_data.email, session, exclude_id=id)
 

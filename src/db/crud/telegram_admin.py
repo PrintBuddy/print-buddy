@@ -11,17 +11,59 @@ class TelegramAdminService:
         self,
         user_id: str,
         telegram_id: str,
-        session: Session
+        session: Session,
+        *,
+        phone_number: str | None = None,
+        accepts_transfer: bool = False,
+        bank_name: str | None = None,
+        bank_iban: str | None = None,
+        bank_link: str | None = None,
     ):
-        
+
         ta = TelegramAdmin(
             user_id=uuid.UUID(user_id),
-            telegram_id=telegram_id
+            telegram_id=telegram_id,
+            phone_number=phone_number,
+            accepts_transfer=accepts_transfer,
+            bank_name=bank_name,
+            bank_iban=bank_iban,
+            bank_link=bank_link,
         )
 
         session.add(ta)
         session.commit()
 
+        return ta
+
+    def update_telegram_admin(
+        self,
+        ta_id: str,
+        session: Session,
+        *,
+        phone_number: str | None = None,
+        accepts_transfer: bool | None = None,
+        bank_name: str | None = None,
+        bank_iban: str | None = None,
+        bank_link: str | None = None,
+    ) -> TelegramAdmin | None:
+        ta = self.get_by_id(ta_id, session)
+        if ta is None:
+            return None
+
+        if phone_number is not None:
+            ta.phone_number = phone_number
+        if accepts_transfer is not None:
+            ta.accepts_transfer = accepts_transfer
+        if bank_name is not None:
+            ta.bank_name = bank_name
+        if bank_iban is not None:
+            ta.bank_iban = bank_iban
+        if bank_link is not None:
+            ta.bank_link = bank_link
+
+        session.add(ta)
+        session.commit()
+        session.refresh(ta)
         return ta
     
     def get_telegram_admin(

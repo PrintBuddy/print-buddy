@@ -151,6 +151,65 @@ def test_non_admin_cannot_resolve(client, session):
     assert resolve_response.status_code == 403
 
 
+def test_get_all_includes_every_status_newest_first(client, session):
+    admin = make_user(session, role=UserRole.ADMIN, balance=0.0)
+    ta = make_telegram_admin(session, admin)
+    user = make_user(session, balance=0.0)
+    user_token = make_token(user.id)
+    admin_token = make_token(admin.id)
+
+    def create(amount):
+        r = client.post(
+            "/api/recharge-requests",
+            json={"amount": amount, "method": "cash", "target_telegram_admin_id": str(ta.id)},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        return r.json()["id"]
+
+    pending_id = create(5.0)
+    approved_id = create(10.0)
+    rejected_id = create(15.0)
+
+    client.patch(
+        f"/api/recharge-requests/{approved_id}",
+        json={"status": "approved"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    client.patch(
+        f"/api/recharge-requests/{rejected_id}",
+        json={"status": "rejected"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    response = client.get(
+        "/api/recharge-requests",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    ids = [r["id"] for r in body]
+    assert set(ids) == {pending_id, approved_id, rejected_id}
+
+    # newest-first: rejected was created last, pending first
+    assert ids.index(rejected_id) < ids.index(approved_id) < ids.index(pending_id)
+
+    statuses = {r["id"]: r["status"] for r in body}
+    assert statuses[pending_id] == "pending"
+    assert statuses[approved_id] == "approved"
+    assert statuses[rejected_id] == "rejected"
+
+
+def test_get_all_requires_admin(client, session):
+    user = make_user(session)
+    user_token = make_token(user.id)
+
+    response = client.get(
+        "/api/recharge-requests",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert response.status_code == 403
+
+
 def test_resolve_via_bot_secret_path_also_works(client, session):
     """The Telegram-side route (bot-secret gated) must resolve through the
     exact same shared resolver as the web route."""

@@ -62,7 +62,8 @@ def get_eligible_admins(
     session: SessionDep,
 ):
     """Who the "I paid admin X" picker offers — every configured Telegram
-    admin, joined with their display info."""
+    admin, joined with their display info. Also doubles as the "how to
+    recharge" listing on the Balance page."""
     pairs = ta_service.get_eligible_admins(session)
     return [
         RechargeAdminOption(
@@ -70,6 +71,11 @@ def get_eligible_admins(
             username=u.username,
             name=u.name,
             surname=u.surname,
+            phone_number=ta.phone_number,
+            accepts_transfer=ta.accepts_transfer,
+            bank_name=ta.bank_name,
+            bank_iban=ta.bank_iban,
+            bank_link=ta.bank_link,
         )
         for ta, u in pairs
     ]
@@ -122,7 +128,18 @@ def get_my_recharge_requests(
     pagination: PaginationDep,
 ):
     user_id = token.credentials
-    return recharge_request_service.get_by_user(user_id, session, pagination.limit, pagination.offset)
+    rows = recharge_request_service.get_by_user_with_target_admin(
+        user_id, session, pagination.limit, pagination.offset
+    )
+    return [
+        RechargeRequestRead(
+            **request.model_dump(),
+            target_admin_username=target_admin.username if target_admin else None,
+            target_admin_name=target_admin.name if target_admin else None,
+            target_admin_surname=target_admin.surname if target_admin else None,
+        )
+        for request, target_admin in rows
+    ]
 
 
 @router.get(
@@ -136,6 +153,20 @@ def get_pending_recharge_requests(
     pagination: PaginationDep,
 ):
     return recharge_request_service.get_pending(session, pagination.limit, pagination.offset)
+
+
+@router.get(
+    "",
+    response_model=list[RechargeRequestAdminRead],
+    status_code=status.HTTP_200_OK,
+)
+def get_all_recharge_requests(
+    token: AdminTokenDep,
+    session: SessionDep,
+    pagination: PaginationDep,
+):
+    """Full history, any status — for the admin Requests view."""
+    return recharge_request_service.get_all(session, pagination.limit, pagination.offset)
 
 
 @router.patch(

@@ -2,28 +2,6 @@ from pydantic import BaseModel
 from datetime import datetime
 
 
-class CashContact(BaseModel):
-    name: str
-    number: str
-
-
-class BankInfo(BaseModel):
-    name: str
-    iban: str
-    link: str
-
-
-class ConfirmationContact(BaseModel):
-    name: str
-    number: str
-
-
-class RechargeInfoSchema(BaseModel):
-    cashContacts: list[CashContact]
-    bank: BankInfo
-    confirmation: ConfirmationContact
-
-
 class TelegramAdminRead(BaseModel):
     id: str
     telegram_id: str
@@ -31,11 +9,29 @@ class TelegramAdminRead(BaseModel):
     username: str | None = None
     name: str | None = None
     surname: str | None = None
+    phone_number: str | None = None
+    accepts_transfer: bool = False
+    bank_name: str | None = None
+    bank_iban: str | None = None
+    bank_link: str | None = None
 
 
 class TelegramAdminCreate(BaseModel):
     username: str   # app username used to look up the PrintBuddy user
     telegram_id: str
+    phone_number: str | None = None
+    accepts_transfer: bool = False
+    bank_name: str | None = None
+    bank_iban: str | None = None
+    bank_link: str | None = None
+
+
+class TelegramAdminUpdate(BaseModel):
+    phone_number: str | None = None
+    accepts_transfer: bool | None = None
+    bank_name: str | None = None
+    bank_iban: str | None = None
+    bank_link: str | None = None
 
 
 class TonerAlertConfig(BaseModel):
@@ -45,7 +41,7 @@ class TonerAlertConfig(BaseModel):
 
 class ActivityLogEntry(BaseModel):
     id: str
-    action: str  # "recharge" | "adjustment" | "refund_approved" | "refund_denied"
+    action: str  # "recharge" | "adjustment" | "refund_approved" | "refund_denied" | "purchase_fulfilled" | "purchase_rejected"
     admin_username: str | None = None
     target_username: str | None = None
     amount: float | None = None
