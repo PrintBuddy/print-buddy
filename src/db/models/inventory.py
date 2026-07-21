@@ -42,6 +42,7 @@ class InventoryItem(SQLModel, table=True):
         default=None, foreign_key="printer.id", ondelete="SET NULL"
     )
     reorder_supplier: str | None = Field(default=None, nullable=True)
+    is_active: bool = Field(default=True, nullable=False)
 
     created_at: datetime = Field(default_factory=generate_time, nullable=False)
     updated_at: datetime = Field(
@@ -59,6 +60,9 @@ class InventoryMovement(SQLModel, table=True):
         sa_column=Column(Numeric(10, 2, asdecimal=False), nullable=False)
     )
     reason: InventoryMovementReason = Field(nullable=False)
+    # Free-text detail for MANUAL_ADJUSTMENT (e.g. "damaged box in storage")
+    # — `reason` itself stays a closed enum for reporting/filtering.
+    notes: str | None = Field(default=None, nullable=True)
 
     related_job_id: uuid.UUID | None = Field(
         default=None, foreign_key="printjob.id", ondelete="SET NULL"

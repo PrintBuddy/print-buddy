@@ -3,7 +3,6 @@ from pydantic import BaseModel, Field
 import uuid
 
 from ..db.models.inventory import InventoryCategory, InventoryMovementReason
-from ..db.models.expense import ExpenseCategory
 
 
 class InventoryItemCreate(BaseModel):
@@ -16,6 +15,16 @@ class InventoryItemCreate(BaseModel):
     reorder_supplier: str | None = None
 
 
+class InventoryItemUpdate(BaseModel):
+    name: str | None = None
+    category: InventoryCategory | None = None
+    unit: str | None = None
+    low_stock_threshold: float | None = Field(default=None, ge=0)
+    printer_id: uuid.UUID | None = None
+    reorder_supplier: str | None = None
+    is_active: bool | None = None
+
+
 class InventoryItemRead(BaseModel):
     id: uuid.UUID
     name: str
@@ -25,6 +34,7 @@ class InventoryItemRead(BaseModel):
     low_stock_threshold: float
     printer_id: uuid.UUID | None = None
     reorder_supplier: str | None = None
+    is_active: bool
     is_low_stock: bool
     created_at: datetime
     updated_at: datetime
@@ -33,6 +43,7 @@ class InventoryItemRead(BaseModel):
 class InventoryMovementCreate(BaseModel):
     delta: float
     reason: InventoryMovementReason
+    notes: str | None = None
 
 
 class InventoryMovementRead(BaseModel):
@@ -40,15 +51,14 @@ class InventoryMovementRead(BaseModel):
     item_id: uuid.UUID
     delta: float
     reason: InventoryMovementReason
+    notes: str | None = None
     related_job_id: uuid.UUID | None = None
     related_expense_id: uuid.UUID | None = None
     created_at: datetime
 
 
 class RestockRequest(BaseModel):
-    """One submit that both logs the purchase as an Expense and records the
-    stock increase, so the two don't become disconnected manual steps."""
+    """Records new stock arriving. Deliberately doesn't touch Expense —
+    the purchase is usually logged separately, days before the package
+    actually arrives; use the Log Expense flow for the cost."""
     quantity: float = Field(..., gt=0)
-    expense_category: ExpenseCategory
-    expense_amount: float = Field(..., gt=0)
-    expense_description: str | None = None

@@ -6,19 +6,18 @@ from ..dependencies.database import SessionDep
 from ...schemas.inventory import (
     InventoryItemCreate,
     InventoryItemRead,
+    InventoryItemUpdate,
     InventoryMovementCreate,
     InventoryMovementRead,
     RestockRequest,
 )
 from ...db.crud.inventory import InventoryService
-from ...db.crud.expense import ExpenseService
 from ...db.models.inventory import InventoryMovementReason
 
 
 router = APIRouter()
 
 inventory_service = InventoryService()
-expense_service = ExpenseService()
 
 
 def _to_read(item) -> InventoryItemRead:
@@ -31,6 +30,7 @@ def _to_read(item) -> InventoryItemRead:
         low_stock_threshold=item.low_stock_threshold,
         printer_id=item.printer_id,
         reorder_supplier=item.reorder_supplier,
+        is_active=item.is_active,
         is_low_stock=item.current_stock <= item.low_stock_threshold,
         created_at=item.created_at,
         updated_at=item.updated_at,
@@ -64,8 +64,35 @@ def create_item(
 def get_all_items(
     token: AdminTokenDep,
     session: SessionDep,
+    active_only: bool = False,
 ):
-    return [_to_read(item) for item in inventory_service.get_all_items(session)]
+    return [_to_read(item) for item in inventory_service.get_all_items(session, active_only=active_only)]
+
+
+@router.patch(
+    "/{item_id}",
+    response_model=InventoryItemRead,
+    status_code=status.HTTP_200_OK,
+)
+def update_item(
+    item_id: str,
+    data: InventoryItemUpdate,
+    token: AdminTokenDep,
+    session: SessionDep,
+):
+    item = inventory_service.update_item(
+        item_id, session,
+        name=data.name,
+        category=data.category,
+        unit=data.unit,
+        low_stock_threshold=data.low_stock_threshold,
+        printer_id=str(data.printer_id) if data.printer_id else None,
+        reorder_supplier=data.reorder_supplier,
+        is_active=data.is_active,
+    )
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    return _to_read(item)
 
 
 @router.get(
@@ -101,7 +128,9 @@ def adjust_stock(
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
 
-    result = inventory_service.record_movement(item_id, data.delta, data.reason, session)
+    result = inventory_service.record_movement(
+        item_id, data.delta, data.reason, session, notes=data.notes,
+    )
     if not result.ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
 
@@ -119,20 +148,15 @@ def restock_item(
     token: AdminTokenDep,
     session: SessionDep,
 ):
-    """Logs the purchase as an Expense and records the stock increase in
-    one submit, so restocking never leaves the two disconnected."""
-    admin_id = token.credentials
+    """Records new stock arriving. Deliberately doesn't touch Expense — the
+    purchase is normally logged separately (and days earlier); log it via
+    the Log Expense flow if it hasn't been already."""
     item = inventory_service.get_item_by_id(item_id, session)
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
 
-    expense = expense_service.create_expense(
-        data.expense_category, data.expense_amount, data.expense_description, admin_id, session,
-    )
-
     result = inventory_service.record_movement(
         item_id, data.quantity, InventoryMovementReason.PURCHASE, session,
-        related_expense_id=str(expense.id),
     )
     if not result.ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
