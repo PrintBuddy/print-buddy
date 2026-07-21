@@ -1,6 +1,8 @@
+import io
 from datetime import date, datetime, time
 
 from fastapi import APIRouter, status
+from fastapi.responses import StreamingResponse
 from sqlmodel import select
 import uuid
 
@@ -10,6 +12,7 @@ from ..dependencies.database import SessionDep
 from sqlmodel import func
 from sqlalchemy import case, cast, String
 
+from ...core.finance_export_service import build_finance_workbook
 from ...db.models.printerjob import PrintJob, JobStatus
 from ...db.models.transaction import Transaction, TransactionType
 from ...db.models.user import User
@@ -262,4 +265,32 @@ def get_stats_overview(
         by_printer=by_printer,
         by_user=by_user,
         finance=finance,
+    )
+
+
+@router.get(
+    "/export/finance",
+    status_code=status.HTTP_200_OK,
+)
+def export_finance(
+    token: AdminTokenDep,
+    session: SessionDep,
+    start_date: date | None = None,
+    end_date: date | None = None,
+):
+    """Downloadable .xlsx export of recharges, expenses, and admin
+    collection events (outstanding-recollected / debts-paid), one sheet per
+    category — scoped to the same optional date window as /overview."""
+    start_dt, end_dt = _date_bounds(start_date, end_date)
+    workbook = build_finance_workbook(session, start_dt, end_dt)
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+
+    filename = f"print-buddy-finance-{date.today().isoformat()}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
