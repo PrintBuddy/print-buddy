@@ -12,6 +12,7 @@ from .collection_event import CollectionEvent
 from .expense import Expense
 from .inventory import InventoryItem, InventoryMovement
 from .product import Product
+from .product_purchase import ProductPurchase, ProductPurchaseNotification
 
 # Re-exported so importing this package (as migrations/env.py does, for
 # Alembic autogenerate) registers every model on SQLModel.metadata.
@@ -33,4 +34,6 @@ __all__ = [
     "InventoryItem",
     "InventoryMovement",
     "Product",
+    "ProductPurchase",
+    "ProductPurchaseNotification",
 ]

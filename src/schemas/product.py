@@ -26,8 +26,3 @@ class ProductRead(BaseModel):
     inventory_item_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
-
-
-class ProductPurchaseResult(BaseModel):
-    product: ProductRead
-    new_balance: float

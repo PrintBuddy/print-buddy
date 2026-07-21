@@ -87,6 +87,9 @@ class Transaction(SQLModel, table=True):
     related_product_id: uuid.UUID | None = Field(
         default=None, foreign_key="product.id", ondelete="SET NULL"
     )
+    related_product_purchase_id: uuid.UUID | None = Field(
+        default=None, foreign_key="productpurchase.id", ondelete="SET NULL"
+    )
 
     # Set once a Super Admin sweeps this row's cash/transfer recharge out
     # of the admin's hands — null means "still outstanding". Only ever

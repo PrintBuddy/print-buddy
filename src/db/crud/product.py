@@ -1,25 +1,9 @@
 import uuid
-from dataclasses import dataclass
-from typing import Literal
 
 from sqlmodel import Session, select
 
 from ..models.product import Product
-from ..models.transaction import Transaction, TransactionType, ActorType
-from ..models.inventory import InventoryMovementReason
-from .user import UserService
-from .inventory import InventoryService
 from ...core.utils import round_money
-
-user_service = UserService()
-inventory_service = InventoryService()
-
-
-@dataclass
-class PurchaseResult:
-    ok: bool
-    reason: Literal["not_found", "inactive", "insufficient_funds"] | None
-    new_balance: float | None
 
 
 class ProductService:
@@ -80,46 +64,11 @@ class ProductService:
         session.refresh(product)
         return product
 
-    def purchase_product(
-        self,
-        product_id: str,
-        user_id: str,
-        session: Session,
-    ) -> PurchaseResult:
-        """Reuses the exact debit pattern already proven in
-        print_assistant.py — atomic adjust_balance with the credit limit
-        enforced, same as a print job's cost."""
+    def delete_product(self, product_id: str, session: Session) -> Product | None:
         product = self.get_product_by_id(product_id, session)
         if product is None:
-            return PurchaseResult(False, "not_found", None)
-        if not product.is_active:
-            return PurchaseResult(False, "inactive", None)
-
-        result = user_service.adjust_balance(
-            user_id, -product.price, session, enforce_credit_limit=True
-        )
-        if not result.ok:
-            reason = "not_found" if result.reason == "not_found" else "insufficient_funds"
-            return PurchaseResult(False, reason, None)
-
-        tx = Transaction(
-            user_id=uuid.UUID(user_id),
-            type=TransactionType.PRODUCT_PURCHASE,
-            amount=-product.price,
-            balance_after=result.new_balance,
-            actor_id=uuid.UUID(user_id),
-            actor_type=ActorType.USER,
-            target_user_id=uuid.UUID(user_id),
-            related_product_id=product.id,
-            note=f"Purchased: {product.name}",
-        )
-        session.add(tx)
+            return None
+        session.delete(product)
         session.commit()
+        return product
 
-        if product.inventory_item_id is not None:
-            inventory_service.record_movement(
-                str(product.inventory_item_id), -1, InventoryMovementReason.PRODUCT_SALE, session,
-                related_product_id=str(product.id),
-            )
-
-        return PurchaseResult(True, None, result.new_balance)

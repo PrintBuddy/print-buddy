@@ -57,6 +57,42 @@ class TelegramNotifier:
             )
             return None
 
+    def send_product_purchase_message(
+        self, chat_id: str, text: str, purchase_id: str
+    ) -> int | None:
+        """Returns the sent message_id, or None if sending failed/disabled.
+        Unlike a recharge request (one targeted admin), a purchase is
+        broadcast to every admin — this is called once per admin, and the
+        caller is responsible for recording each resulting message_id so
+        every copy can be edited when the purchase is resolved."""
+        if not self.enabled:
+            logger.warning("TELEGRAM_BOT_TOKEN not set — skipping direct Telegram notification")
+            return None
+
+        try:
+            response = httpx.post(
+                f"{self._base_url}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "reply_markup": {
+                        "inline_keyboard": [[
+                            {"text": "✅ Given", "callback_data": f"pp:fulfill:{purchase_id}"},
+                            {"text": "❌ Reject & Refund", "callback_data": f"pp:reject:{purchase_id}"},
+                        ]]
+                    },
+                },
+                timeout=5,
+            )
+            response.raise_for_status()
+            return response.json()["result"]["message_id"]
+        except Exception:
+            logger.exception(
+                "Failed to send Telegram product-purchase notification to chat_id=%s", chat_id
+            )
+            return None
+
     def send_message(self, chat_id: str, text: str) -> None:
         """Plain notification, no inline keyboard — used for low-stock
         inventory alerts."""
