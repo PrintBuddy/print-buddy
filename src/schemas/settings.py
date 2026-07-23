@@ -27,6 +27,7 @@ class TelegramAdminCreate(BaseModel):
 
 
 class TelegramAdminUpdate(BaseModel):
+    telegram_id: str | None = None
     phone_number: str | None = None
     accepts_transfer: bool | None = None
     bank_name: str | None = None

@@ -290,8 +290,14 @@ def update_telegram_admin(
     token: AdminTokenDep,
     session: SessionDep
 ):
+    if body.telegram_id is not None:
+        conflict = ta_service.get_telegram_admin(body.telegram_id, session)
+        if conflict is not None and str(conflict.id) != ta_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Telegram ID already registered")
+
     ta = ta_service.update_telegram_admin(
         ta_id, session,
+        telegram_id=body.telegram_id,
         phone_number=body.phone_number,
         accepts_transfer=body.accepts_transfer,
         bank_name=body.bank_name,

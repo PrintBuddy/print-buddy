@@ -66,6 +66,51 @@ def test_update_telegram_admin_payment_info(client, session):
     assert body["bank_iban"] == "ES11 1111"
 
 
+def test_update_telegram_admin_telegram_id(client, session):
+    super_admin = make_user(session, role=UserRole.SUPER_ADMIN)
+    admin_token = make_token(super_admin.id)
+    admin_user = make_user(session, role=UserRole.ADMIN)
+
+    created = client.post(
+        "/api/settings/telegram-admins",
+        json={"username": admin_user.username, "telegram_id": "555555"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()
+
+    response = client.patch(
+        f"/api/settings/telegram-admins/{created['id']}",
+        json={"telegram_id": "666666"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["telegram_id"] == "666666"
+
+
+def test_update_telegram_admin_rejects_duplicate_telegram_id(client, session):
+    super_admin = make_user(session, role=UserRole.SUPER_ADMIN)
+    admin_token = make_token(super_admin.id)
+    admin_one = make_user(session, role=UserRole.ADMIN)
+    admin_two = make_user(session, role=UserRole.ADMIN)
+
+    client.post(
+        "/api/settings/telegram-admins",
+        json={"username": admin_one.username, "telegram_id": "777777"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    created_two = client.post(
+        "/api/settings/telegram-admins",
+        json={"username": admin_two.username, "telegram_id": "888888"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()
+
+    response = client.patch(
+        f"/api/settings/telegram-admins/{created_two['id']}",
+        json={"telegram_id": "777777"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 409
+
+
 def test_update_nonexistent_telegram_admin_404s(client, session):
     super_admin = make_user(session, role=UserRole.SUPER_ADMIN)
     admin_token = make_token(super_admin.id)

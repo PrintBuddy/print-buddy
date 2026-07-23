@@ -40,6 +40,7 @@ class TelegramAdminService:
         ta_id: str,
         session: Session,
         *,
+        telegram_id: str | None = None,
         phone_number: str | None = None,
         accepts_transfer: bool | None = None,
         bank_name: str | None = None,
@@ -50,6 +51,8 @@ class TelegramAdminService:
         if ta is None:
             return None
 
+        if telegram_id is not None:
+            ta.telegram_id = telegram_id
         if phone_number is not None:
             ta.phone_number = phone_number
         if accepts_transfer is not None:
