@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status, HTTPException
+from fastapi import APIRouter, status
 
 from ..dependencies.token import TokenDep, AdminTokenDep
 from ..dependencies.database import SessionDep
@@ -7,14 +7,9 @@ from ..dependencies.pagination import PaginationDep
 from ...db.crud.transaction import TransactionService
 from ...schemas.transaction import TransactionRead
 
-from ...db.crud.user import UserService
-from ...db.crud.app_config import AppConfigService
-
 
 router = APIRouter()
 tx_service = TransactionService()
-user_service = UserService()
-config_service = AppConfigService()
 
 
 @router.get(
@@ -32,20 +27,6 @@ def get_my_transactions(
     tx_s = tx_service.get_transactions_from_user(user_id, session, pagination.limit, pagination.offset)
 
     return tx_s
-
-
-@router.get(
-    "/recharge-info",
-    status_code=status.HTTP_200_OK
-)
-def get_recharge_info(
-    token: TokenDep,
-    session: SessionDep
-):
-    data = config_service.get("recharge_info", session)
-    if data is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recharge info not found")
-    return data
 
 
 @router.get(

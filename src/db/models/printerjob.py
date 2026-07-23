@@ -75,3 +75,9 @@ class PrintJob(SQLModel, table=True):
     )
 
     completed_at: datetime = Field(nullable=True, default=None)
+
+    # Set on the NEW job row when it exists purely because an admin
+    # reprinted an earlier job for free — null for every ordinary job.
+    free_reprint_of_job_id: uuid.UUID | None = Field(
+        default=None, foreign_key="printjob.id", ondelete="SET NULL"
+    )

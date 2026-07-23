@@ -8,10 +8,12 @@ from ..db.crud.file import FileService
 from ..db.crud.printjob import PrintJobService
 from ..db.crud.transaction import TransactionService
 
-from ..db.models.transaction import TransactionType
+from ..db.models.transaction import TransactionType, ActorType
 
 from ..schemas.printjob import PrintJobCreate
 from ..schemas.transaction import TransactionCreate
+from ..schemas.print import PrintOptions, SidesOption
+from ..db.models.printerjob import PrintJob
 
 from .cups_manager import cups_manager as cups_mgr
 
@@ -134,9 +136,96 @@ class PrintAssistant:
             type=TransactionType.PRINT,
             amount=-round_money(printjob.cost),
             balance_after=debit.new_balance,  # type: ignore
-            note=f"Printed file: {pj.file_name}"
+            note=f"Printed file: {pj.file_name}",
+            actor_id=uuid.UUID(printjob.user_id),
+            actor_type=ActorType.USER,
+            target_user_id=uuid.UUID(printjob.user_id),
+            related_job_id=pj.id,
         )
 
         tx_service.create_transaction(tx_data, session)
 
         return pj
+
+    def send_free_reprint(
+        self,
+        original_job: PrintJob,
+        admin_id: str,
+        reason: str,
+        session: Session,
+    ) -> PrintJob:
+        """Re-submits an earlier job at no cost. Deliberately doesn't
+        reuse send_print_job: that method always debits the printing
+        user and attributes the resulting Transaction to them as actor,
+        which would misrepresent who authorized this (the admin, not the
+        user) even though the amount is 0. No debit, no reversal-on-
+        failure needed here since nothing is ever charged.
+
+        Only reconstructs what a PrintJob row actually stores — number_up,
+        two_sided, color — not the original copies/page-range, which
+        aren't persisted per-job; reprints the whole file, once.
+        """
+        file = file_service.get_file_by_id(str(original_job.file_id), session) if original_job.file_id else None
+        if file is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The original file is no longer available to reprint"
+            )
+
+        printer = printer_service.get_printer_by_id(original_job.printer_id, session)
+        if printer is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Printer not found")
+
+        print_options = PrintOptions(
+            copies=1,
+            sides=SidesOption.TWO_SIDED_LONG if original_job.two_sided else SidesOption.ONE_SIDED,
+            color=original_job.color,
+            page_ranges="all",
+            number_up=original_job.number_up,
+        )
+
+        username = user_service.get_username_by_id(str(original_job.user_id), session)
+
+        cups_id = cups_mgr.print_file(
+            printer_name=printer.name,
+            file_path=file.filepath,
+            title=f"{username} free reprint in {printer.name}",
+            options=print_options.cups_options
+        )
+        if not cups_id:
+            logger.error(f"Unable to send free reprint of job {original_job.id} to CUPS")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to send print job to CUPS service"
+            )
+
+        cups_mgr.get_toner_levels(printer.name)
+
+        pj_create = PrintJobCreate(
+            user_id=str(original_job.user_id),
+            printer=printer,
+            file=file,
+            print_options=print_options,
+            cost=0,
+            pages=original_job.pages,
+        )
+        new_job = pj_service.create_job(cups_id=cups_id, printjob=pj_create, session=session)
+        new_job.free_reprint_of_job_id = original_job.id
+        session.add(new_job)
+        session.commit()
+        session.refresh(new_job)
+
+        tx_data = TransactionCreate(
+            user_id=original_job.user_id,
+            type=TransactionType.FREE_REPRINT,
+            amount=0,
+            balance_after=None,
+            note=reason,
+            actor_id=uuid.UUID(admin_id),
+            actor_type=ActorType.ADMIN,
+            target_user_id=original_job.user_id,
+            related_job_id=new_job.id,
+        )
+        tx_service.create_transaction(tx_data, session)
+
+        return new_job

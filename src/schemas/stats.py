@@ -25,6 +25,8 @@ class FinanceStats(BaseModel):
     total_spent_on_print: float
     total_refunded: float
     total_adjustments: float
+    total_expenses: float
+    total_product_purchases: float
 
 
 class GlobalStats(BaseModel):

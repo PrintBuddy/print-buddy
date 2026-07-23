@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 import uuid
 
@@ -47,7 +47,12 @@ class PrintJobRead(BaseModel):
     status: JobStatus
     created_at: datetime
     completed_at: datetime | None = None
+    free_reprint_of_job_id: uuid.UUID | None = None
 
 
 class PrintJobAdminRead(PrintJobRead):
     user_id: uuid.UUID
+
+
+class FreeReprintCreate(BaseModel):
+    reason: str = Field(..., min_length=1)

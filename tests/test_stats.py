@@ -1,5 +1,6 @@
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from src.api.routes.stats import get_my_stats, get_stats_overview
 from src.db.models.printerjob import PrintJob, JobStatus
@@ -30,7 +31,7 @@ def make_user(session, **overrides):
     return user
 
 
-def make_job(session, user, printer_name, pages, color, two_sided, cost, status=JobStatus.COMPLETED):
+def make_job(session, user, printer_name, pages, color, two_sided, cost, status=JobStatus.COMPLETED, completed_at=None):
     job = PrintJob(
         cups_id=str(uuid.uuid4()),
         user_id=user.id,
@@ -41,13 +42,18 @@ def make_job(session, user, printer_name, pages, color, two_sided, cost, status=
         two_sided=two_sided,
         cost=cost,
         status=status,
+        # Real completions always set this (db/crud/printjob.py's
+        # update_job_status); constructing COMPLETED jobs directly, as
+        # every test here does, would otherwise leave it null and silently
+        # exclude the job from any date-range query.
+        completed_at=completed_at or (datetime.now() if status == JobStatus.COMPLETED else None),
     )
     session.add(job)
     session.commit()
     return job
 
 
-def make_transaction(session, user, tx_type, amount):
+def make_transaction(session, user, tx_type, amount, created_at=None):
     tx = Transaction(
         user_id=user.id,
         type=tx_type,
@@ -56,6 +62,10 @@ def make_transaction(session, user, tx_type, amount):
     )
     session.add(tx)
     session.commit()
+    if created_at is not None:
+        tx.created_at = created_at
+        session.add(tx)
+        session.commit()
     return tx
 
 
@@ -158,3 +168,56 @@ def test_get_stats_overview(session):
     assert finance.total_refunded == 0.50
     assert finance.total_adjustments == 2.00
     assert finance.total_current_balance == 40.00
+    assert finance.total_expenses == 0.0
+    assert finance.total_product_purchases == 0.0
+
+
+def test_stats_overview_includes_expenses_and_product_purchases(session):
+    user_a, _user_b = seed_data(session)
+
+    make_transaction(session, user_a, TransactionType.EXPENSE, -12.50)
+    make_transaction(session, user_a, TransactionType.PRODUCT_PURCHASE, -3.00)
+
+    stats = get_stats_overview(FakeToken(str(user_a.id)), session)
+
+    assert stats.finance.total_expenses == 12.50
+    assert stats.finance.total_product_purchases == 3.00
+    # Untouched by the new transaction types
+    assert stats.finance.total_recharged == 10.00
+
+
+def test_stats_overview_date_range_excludes_jobs_and_transactions_outside_window(session):
+    user_a, user_b = seed_data(session)
+
+    now = datetime.now()
+    outside = now - timedelta(days=30)
+
+    # An extra job and transaction that predate the window under test.
+    make_job(session, user_a, "Printer1", pages=50, color=True, two_sided=False, cost=10.0, completed_at=outside)
+    make_transaction(session, user_a, TransactionType.RECHARGE, 100.0, created_at=outside)
+
+    start = (now - timedelta(days=1)).date()
+    end = (now + timedelta(days=1)).date()
+
+    stats = get_stats_overview(FakeToken(str(user_a.id)), session, start_date=start, end_date=end)
+
+    # Same totals as the plain all-time test — the old-dated job/tx must
+    # not be counted even though they're in the DB.
+    assert stats.total_pages == 50
+    assert stats.finance.total_recharged == 10.00
+
+
+def test_get_my_stats_date_range_excludes_jobs_outside_window(session):
+    user_a, _user_b = seed_data(session)
+
+    now = datetime.now()
+    outside = now - timedelta(days=30)
+    make_job(session, user_a, "Printer1", pages=999, color=False, two_sided=False, cost=50.0, completed_at=outside)
+
+    start = (now - timedelta(days=1)).date()
+    end = (now + timedelta(days=1)).date()
+
+    stats = get_my_stats(FakeToken(str(user_a.id)), session, start_date=start, end_date=end)
+
+    assert stats.total_pages == 23
+    assert stats.total_jobs == 3

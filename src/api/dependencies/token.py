@@ -65,10 +65,37 @@ class AdminTokenBearer(TokenBearer):
         return creds
 
 
+class SuperAdminTokenBearer(TokenBearer):
+
+    def __init__(self, auto_error: bool = True):
+        super().__init__(auto_error=auto_error)
+
+    async def __call__(self, request: Request) -> HTTPAuthorizationCredentials | None:
+        creds = await super().__call__(request)
+        if creds is None:
+            return creds
+
+        user_id = creds.credentials
+
+        with Session(engine) as session:
+            is_super_admin = user_service.user_is_super_admin(user_id, session)
+            if not is_super_admin:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Super admin privileges required"
+                )
+
+        return creds
+
+
 TokenDep = Annotated[
     HTTPAuthorizationCredentials, Depends(TokenBearer())
 ]
 
 AdminTokenDep = Annotated[
     HTTPAuthorizationCredentials, Depends(AdminTokenBearer())
+]
+
+SuperAdminTokenDep = Annotated[
+    HTTPAuthorizationCredentials, Depends(SuperAdminTokenBearer())
 ]

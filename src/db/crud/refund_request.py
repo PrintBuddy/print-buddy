@@ -26,6 +26,32 @@ class RefundRequestService:
         session.refresh(refund)
         return refund
 
+    def create_override_refund_request(
+        self,
+        user_id: str,
+        print_job_id: str,
+        admin_id: str,
+        reason: str,
+        admin_username: str,
+        session: Session,
+    ) -> RefundRequest:
+        """An admin refunding a job the user never requested a refund
+        for — created already-resolved, unlike the normal PENDING ->
+        APPROVED flow. `initiated_by_admin_id` is what distinguishes this
+        from an ordinary admin-approved request."""
+        refund = RefundRequest(
+            user_id=uuid.UUID(user_id),
+            print_job_id=uuid.UUID(print_job_id),
+            status=RefundStatus.APPROVED,
+            initiated_by_admin_id=uuid.UUID(admin_id),
+            admin_message=reason,
+            resolved_by_username=admin_username,
+        )
+        session.add(refund)
+        session.commit()
+        session.refresh(refund)
+        return refund
+
     ########################## READ #########################
 
     def get_refund_by_id(

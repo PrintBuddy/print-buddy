@@ -47,6 +47,15 @@ class Settings(BaseSettings):
 
     TELEGRAM_SECRET: str
 
+    # Lets the backend push Telegram messages directly (recharge-request
+    # notifications created from the web app, where no bot conversation is
+    # driving the send) using the same bot account the bot itself polls
+    # with — Telegram routes the resulting button press to the bot
+    # regardless of which process sent the original message. Optional: web-
+    # originated recharge requests degrade to "no Telegram ping, web queue
+    # only" if unset, rather than failing outright.
+    TELEGRAM_BOT_TOKEN: str | None = None
+
     MAIL_USERNAME: str
     MAIL_PASSWORD: str
     MAIL_FROM: str

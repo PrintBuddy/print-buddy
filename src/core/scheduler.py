@@ -14,15 +14,19 @@ from ..db.crud.user import UserService
 from ..db.crud.transaction import TransactionService
 from ..db.crud.file import FileService
 from ..db.crud.app_config import AppConfigService
+from ..db.crud.inventory import InventoryService
+from ..db.crud.telegram_admin import TelegramAdminService
 
-from ..db.models.printerjob import ERROR_STATUS
-from ..db.models.transaction import TransactionType
+from ..db.models.printerjob import ERROR_STATUS, JobStatus
+from ..db.models.transaction import TransactionType, ActorType
+from ..db.models.inventory import InventoryCategory, InventoryMovementReason
 from ..schemas.printer import PrinterCUPSUpdate
 from ..schemas.transaction import TransactionCreate
 
 from ..core.utils import generate_time
 from ..core.file_manager import FileManager
 from ..core.mail_assistant import send_toner_alert_email
+from ..core.telegram_notifier import telegram_notifier
 from .logger import logger
 
 
@@ -30,12 +34,17 @@ TONER_ALERT_CONFIG_KEY = "toner_alert_config"
 TONER_ALERT_STATE_KEY = "toner_alert_state"
 TONER_ALERT_DEFAULT_CONFIG = {"enabled": False, "interval_hours": 24}
 
+LOW_STOCK_ALERT_STATE_KEY = "low_stock_alert_state"
+LOW_STOCK_ALERT_INTERVAL_HOURS = 24
+
 printer_service = PrinterService()
 pj_service = PrintJobService()
 user_service = UserService()
 tx_service = TransactionService()
 file_service = FileService()
 config_service = AppConfigService()
+inventory_service = InventoryService()
+ta_service = TelegramAdminService()
 fm = FileManager()
 
 
@@ -115,6 +124,35 @@ class Scheduler(AsyncIOScheduler):
                     session=session
                 )
 
+    def _decrement_paper_stock(self, job, session: Session) -> None:
+        """Best-effort — decrements by the document's raw page count
+        (matches how this was scoped; doesn't account for number_up/
+        duplex/copies, since sheet-accurate consumption isn't tracked
+        anywhere in the print pipeline today). Prefers an item scoped to
+        this job's printer, falls back to a shared (printer_id=None) paper
+        stock, and silently no-ops if no matching item has been set up —
+        inventory tracking is opt-in, not a hard requirement to print.
+        """
+        items = [
+            i for i in inventory_service.get_all_items(session)
+            if i.category == InventoryCategory.PAPER
+        ]
+        if not items:
+            return
+
+        item = next((i for i in items if i.printer_id == job.printer_id), None)
+        if item is None:
+            item = next((i for i in items if i.printer_id is None), None)
+        if item is None:
+            return
+
+        result = inventory_service.record_movement(
+            str(item.id), -job.pages, InventoryMovementReason.PRINT_CONSUMPTION, session,
+            related_job_id=str(job.id),
+        )
+        if not result.ok:
+            logger.error(f"SCHEDULER: Failed to decrement paper stock for job {job.id}")
+
     def update_jobs_sync(self):
 
         with Session(engine) as session:
@@ -131,6 +169,10 @@ class Scheduler(AsyncIOScheduler):
 
                 if status != new_status:
                     job = pj_service.update_job_status(str(job_id), new_status, session)
+
+                    if job is not None and new_status == JobStatus.COMPLETED:
+                        self._decrement_paper_stock(job, session)
+
                     if job is not None and new_status in ERROR_STATUS:
                         result = user_service.adjust_balance(
                             str(job.user_id), job.cost, session,
@@ -148,7 +190,10 @@ class Scheduler(AsyncIOScheduler):
                             type=TransactionType.REFUND,
                             amount=job.cost,
                             balance_after=result.new_balance,  # type: ignore
-                            note=f"Refunded from file print: {job.file_name}"
+                            note=f"Refunded from file print: {job.file_name}",
+                            actor_type=ActorType.SYSTEM,
+                            target_user_id=job.user_id,
+                            related_job_id=job.id,
                         )
 
                         tx_service.create_transaction(tx_data, session)
@@ -241,6 +286,86 @@ class Scheduler(AsyncIOScheduler):
         except Exception as e:
             logger.error(f"SCHEDULER: check_toner_alerts error: {e}")
 
+    def check_low_stock_sync(self) -> list[dict] | None:
+        """Same debounce shape as check_toner_alerts_sync — notify once
+        per low-stock episode, re-notify after LOW_STOCK_ALERT_INTERVAL_HOURS
+        if it's still low, and forget the state once stock rises back
+        above threshold so the next dip notifies immediately again."""
+        with Session(engine) as session:
+            raw_state = config_service.get(LOW_STOCK_ALERT_STATE_KEY, session) or {}
+            chat_ids = ta_service.get_all_chat_ids(session)
+            low_items = inventory_service.get_low_stock_items(session)
+
+        if not chat_ids:
+            return None
+
+        alerts: list[dict] = []
+        new_state: dict = {}
+        now = generate_time()
+
+        for item in low_items:
+            key = str(item.id)
+            item_state = raw_state.get(key, {})
+            last_notified_str = item_state.get("last_notified")
+
+            should_notify = False
+            if last_notified_str is None:
+                should_notify = True
+            else:
+                try:
+                    last_notified = datetime.fromisoformat(last_notified_str)
+                    elapsed_hours = (now - last_notified).total_seconds() / 3600
+                    should_notify = elapsed_hours >= LOW_STOCK_ALERT_INTERVAL_HOURS
+                except (ValueError, TypeError):
+                    should_notify = True
+
+            new_state[key] = {
+                "last_notified": now.isoformat() if should_notify else last_notified_str,
+            }
+
+            if should_notify:
+                alerts.append({
+                    "name": item.name,
+                    "current_stock": item.current_stock,
+                    "unit": item.unit,
+                    "low_stock_threshold": item.low_stock_threshold,
+                })
+
+        with Session(engine) as session:
+            config_service.set(LOW_STOCK_ALERT_STATE_KEY, new_state, session)
+
+        if not alerts:
+            return None
+
+        return [{"alerts": alerts, "chat_ids": chat_ids}]
+
+    async def check_low_stock(self):
+        try:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, self.check_low_stock_sync)
+
+            if not result:
+                return
+
+            payload = result[0]
+            lines = ["📦 <b>Low Stock Alert</b>", ""]
+            for alert in payload["alerts"]:
+                lines.append(
+                    f"• {alert['name']}: {alert['current_stock']} {alert['unit']} "
+                    f"(threshold: {alert['low_stock_threshold']})"
+                )
+            text = "\n".join(lines)
+
+            for chat_id in payload["chat_ids"]:
+                telegram_notifier.send_message(chat_id, text)
+
+            logger.info(f"SCHEDULER: Sent low-stock alert for {len(payload['alerts'])} item(s)")
+
+        except asyncio.CancelledError:
+            logger.warning("SCHEDULER: check_low_stock cancelled during shutdown")
+        except Exception as e:
+            logger.error(f"SCHEDULER: check_low_stock error: {e}")
+
     def delete_old_files_sync(self):
         timeframe = generate_time() - timedelta(days=1)
 
@@ -275,7 +400,8 @@ class Scheduler(AsyncIOScheduler):
         self.add_job(self.update_jobs, "interval", seconds=5, name="jobs_updater")
         self.add_job(self.delete_old_files, "interval", seconds=7200, name="file_cleaner")
         self.add_job(self.check_toner_alerts, "interval", seconds=60, name="toner_alert_checker")
-        
+        self.add_job(self.check_low_stock, "interval", seconds=60, name="low_stock_checker")
+
         super().start(*args, **kwargs)
 
 
