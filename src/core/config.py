@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     # regardless of which process sent the original message. Optional: web-
     # originated recharge requests degrade to "no Telegram ping, web queue
     # only" if unset, rather than failing outright.
-    TELEGRAM_BOT_TOKEN: str | None = None
+    TELEGRAM_TOKEN: str | None = None
 
     MAIL_USERNAME: str
     MAIL_PASSWORD: str
