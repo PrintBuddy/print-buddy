@@ -16,8 +16,8 @@ class TelegramNotifier:
 
     def __init__(self):
         self._base_url = (
-            f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}"
-            if settings.TELEGRAM_BOT_TOKEN
+            f"https://api.telegram.org/bot{settings.TELEGRAM_TOKEN}"
+            if settings.TELEGRAM_TOKEN
             else None
         )
 
@@ -30,7 +30,7 @@ class TelegramNotifier:
     ) -> int | None:
         """Returns the sent message_id, or None if sending failed/disabled."""
         if not self.enabled:
-            logger.warning("TELEGRAM_BOT_TOKEN not set — skipping direct Telegram notification")
+            logger.warning("TELEGRAM_TOKEN not set — skipping direct Telegram notification")
             return None
 
         try:
@@ -66,7 +66,7 @@ class TelegramNotifier:
         caller is responsible for recording each resulting message_id so
         every copy can be edited when the purchase is resolved."""
         if not self.enabled:
-            logger.warning("TELEGRAM_BOT_TOKEN not set — skipping direct Telegram notification")
+            logger.warning("TELEGRAM_TOKEN not set — skipping direct Telegram notification")
             return None
 
         try:
