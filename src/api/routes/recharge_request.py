@@ -152,7 +152,16 @@ def get_pending_recharge_requests(
     session: SessionDep,
     pagination: PaginationDep,
 ):
-    return recharge_request_service.get_pending(session, pagination.limit, pagination.offset)
+    rows = recharge_request_service.get_pending(session, pagination.limit, pagination.offset)
+    return [
+        RechargeRequestAdminRead(
+            **request.model_dump(),
+            target_admin_username=target_admin.username if target_admin else None,
+            target_admin_name=target_admin.name if target_admin else None,
+            target_admin_surname=target_admin.surname if target_admin else None,
+        )
+        for request, target_admin in rows
+    ]
 
 
 @router.get(
@@ -166,7 +175,16 @@ def get_all_recharge_requests(
     pagination: PaginationDep,
 ):
     """Full history, any status — for the admin Requests view."""
-    return recharge_request_service.get_all(session, pagination.limit, pagination.offset)
+    rows = recharge_request_service.get_all(session, pagination.limit, pagination.offset)
+    return [
+        RechargeRequestAdminRead(
+            **request.model_dump(),
+            target_admin_username=target_admin.username if target_admin else None,
+            target_admin_name=target_admin.name if target_admin else None,
+            target_admin_surname=target_admin.surname if target_admin else None,
+        )
+        for request, target_admin in rows
+    ]
 
 
 @router.patch(

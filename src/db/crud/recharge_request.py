@@ -115,9 +115,13 @@ class RechargeRequestService:
         session: Session,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[RechargeRequest]:
+    ) -> list[tuple[RechargeRequest, User | None]]:
+        """Also resolves who the request was sent to — outer-joined since
+        target_telegram_admin_id is null for legacy bot-created rows."""
         stmt = (
-            select(RechargeRequest)
+            select(RechargeRequest, User)
+            .outerjoin(TelegramAdmin, RechargeRequest.target_telegram_admin_id == TelegramAdmin.id)  # type: ignore
+            .outerjoin(User, TelegramAdmin.user_id == User.id)  # type: ignore
             .where(RechargeRequest.status == RechargeRequestStatus.PENDING)
             .order_by(RechargeRequest.created_at.desc())  # type: ignore
             .limit(limit)
@@ -130,9 +134,12 @@ class RechargeRequestService:
         session: Session,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[RechargeRequest]:
+    ) -> list[tuple[RechargeRequest, User | None]]:
+        """Same as get_pending, but full history regardless of status."""
         stmt = (
-            select(RechargeRequest)
+            select(RechargeRequest, User)
+            .outerjoin(TelegramAdmin, RechargeRequest.target_telegram_admin_id == TelegramAdmin.id)  # type: ignore
+            .outerjoin(User, TelegramAdmin.user_id == User.id)  # type: ignore
             .order_by(RechargeRequest.created_at.desc())  # type: ignore
             .limit(limit)
             .offset(offset)
