@@ -67,11 +67,8 @@ class Settings(BaseSettings):
     SENTRY_DSN: str | None = None
 
     # slowapi's rate-limit string for POST /auth/login (e.g. "5/minute").
-    # Keyed by remote address (core/limiter.py) — every request in a
-    # Docker-networked E2E run (Playwright's browser -> published port)
-    # shares the same source address, so several specs logging in back to
-    # back can trip the production limit within seconds. Overridable so
-    # CI/E2E can raise it without weakening the real default.
+    # Keyed by remote address (core/limiter.py). Overridable so a test or
+    # local environment can raise it without weakening the real default.
     LOGIN_RATE_LIMIT: str = "5/minute"
 
     @computed_field()

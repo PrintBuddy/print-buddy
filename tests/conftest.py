@@ -1,5 +1,6 @@
 import uuid as _uuid_mod
 
+import bcrypt
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
@@ -13,6 +14,7 @@ from sqlmodel import Session, SQLModel, create_engine
 # any test file that doesn't already import the models itself.
 from src.main import app
 from src.core.limiter import limiter
+import src.core.security as _security_mod
 from src.core.security import Security
 from src.db.main import get_session
 from src.db.models.user import User
@@ -41,6 +43,13 @@ def _string_tolerant_bind_processor(self, dialect):
 
 
 sqltypes.Uuid.bind_processor = _string_tolerant_bind_processor
+
+
+# bcrypt's default cost (12 rounds, ~0.25s per hash/verify) made password
+# hashing most of the suite's runtime — every make_user() hashes one. Tests
+# don't need brute-force resistance, so use the minimum cost here only;
+# production hashing is untouched.
+_security_mod.gensalt = lambda: bcrypt.gensalt(rounds=4)
 
 
 @pytest.fixture
